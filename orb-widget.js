@@ -79,8 +79,8 @@
             const header = document.createElement('div');
             header.id = 'orb-widget-header';
             header.style.cssText = `
-                background: #A3A3A3;
-                color: #000;
+                color: white;
+                background: linear-gradient(135deg, #1a2533, #334155);
                 padding: 10px;
                 display: flex;
                 justify-content: space-between;
@@ -104,9 +104,12 @@
                 align-items: center;
                 justify-content: center;
                 flex-shrink: 0;
+                background: rgba(255, 255, 255, 0.2); 
+                border-radius: 8px; 
+                padding: 1px;
             `;
             iconContainer.innerHTML = `
-                <svg width="50" height="50" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg width="40" height="40" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M245.729 304C279.319 304 306.549 276.749 306.549 243.134C306.549 209.519 279.319 182.269 245.729 182.269C212.139 182.269 184.909 209.519 184.909 243.134C184.909 276.749 212.139 304 245.729 304Z" fill="#F5450A"/>
                     <path d="M138.634 165.985C156.327 165.985 170.671 151.63 170.671 133.923C170.671 116.216 156.327 101.862 138.634 101.862C120.94 101.862 106.596 116.216 106.596 133.923C106.596 151.63 120.94 165.985 138.634 165.985Z" fill="#F5450A"/>
                     <path d="M327.055 130.035C343.906 130.035 357.567 116.364 357.567 99.5001C357.567 82.6363 343.906 68.9656 327.055 68.9656C310.204 68.9656 296.544 82.6363 296.544 99.5001C296.544 116.364 310.204 130.035 327.055 130.035Z" fill="#F5450A"/>
@@ -119,7 +122,7 @@
             const title = document.createElement('h3');
             title.id = 'orb-widget-title';
             title.textContent = this.getTitle();
-            title.style.cssText = 'margin: 0; font-size: 16px; font-weight: 600; flex: 1;';
+            title.style.cssText = 'margin: 0; font-size: 20px; font-weight: 500; flex: 1; font-family: Arial;';
 
             leftSide.appendChild(iconContainer);
             leftSide.appendChild(title);
@@ -129,7 +132,7 @@
             closeBtn.style.cssText = `
                 background: transparent;
                 border: none;
-                color: #000;
+                color: #FFF;
                 font-size: 32px;
                 line-height: 1;
                 cursor: pointer;
@@ -164,6 +167,7 @@
 
             const iframe = document.createElement('iframe');
             iframe.id = 'orb-widget-iframe';
+            iframe.allow = 'clipboard-write';
             iframe.style.cssText = `
                 width: 100%;
                 height: 100%;

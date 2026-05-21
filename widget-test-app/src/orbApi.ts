@@ -51,6 +51,7 @@ export interface UserItem {
   lastName: string
   professionalRegNumber?: string
   emailAddress?: string
+  isClinician?: boolean
   isLocum?: boolean
   authorisedSignatory?: boolean
 }
@@ -114,6 +115,7 @@ export interface CreateUserRequest {
   lastName: string
   professionalRegNumber?: string
   emailAddress?: string
+  isClinician: boolean
   isLocum?: boolean
   authorisedSignatory?: boolean
 }
@@ -123,6 +125,7 @@ export interface UpdateUserRequest {
   lastName?: string
   professionalRegNumber?: string
   emailAddress?: string
+  isClinician?: boolean
   isLocum?: boolean
   authorisedSignatory?: boolean
 }

@@ -43,6 +43,7 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
   const [lastName, setLastName] = useState('')
   const [regNum, setRegNum] = useState('')
   const [email, setEmail] = useState('')
+  const [isClinician, setIsClinician] = useState(true)
   const [isLocum, setIsLocum] = useState(false)
   const [authorisedSignatory, setAuthorisedSignatory] = useState(false)
 
@@ -54,7 +55,7 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
 
   const clear = () => {
     setUserId(''); setFirstName(''); setLastName(''); setRegNum(''); setEmail('')
-    setIsLocum(false); setAuthorisedSignatory(false)
+    setIsClinician(true); setIsLocum(false); setAuthorisedSignatory(false)
   }
 
   const create = async () => {
@@ -63,6 +64,7 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
       firstName, lastName,
       professionalRegNumber: regNum,
       emailAddress: email,
+      isClinician,
       isLocum,
       authorisedSignatory
     }) as Parameters<OrbApi['createUser']>[2])
@@ -84,6 +86,8 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
         <input value={regNum} onChange={e => setRegNum(e.target.value)} style={inputStyle} />
         <Label>Email</Label>
         <input value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+        <Label>Clinician</Label>
+        <label><input type="checkbox" checked={isClinician} onChange={e => setIsClinician(e.target.checked)} /> Yes</label>
         <Label>Locum</Label>
         <label><input type="checkbox" checked={isLocum} onChange={e => setIsLocum(e.target.checked)} /> Yes</label>
         <Label>Authorised Signatory</Label>
@@ -110,13 +114,14 @@ function UserUpdateForm(props: {
   const [lastName, setLastName] = useState('')
   const [regNum, setRegNum] = useState('')
   const [email, setEmail] = useState('')
+  const [isClinician, setIsClinician] = useState(false)
   const [isLocum, setIsLocum] = useState(false)
   const [authorisedSignatory, setAuthorisedSignatory] = useState(false)
 
   useEffect(() => {
     if (!target) {
       setFirstName(''); setLastName(''); setRegNum(''); setEmail('')
-      setIsLocum(false); setAuthorisedSignatory(false)
+      setIsClinician(false); setIsLocum(false); setAuthorisedSignatory(false)
       return
     }
     const u = props.users.find(x => x.extUserId === target)
@@ -125,6 +130,7 @@ function UserUpdateForm(props: {
     setLastName(u.lastName ?? '')
     setRegNum(u.professionalRegNumber ?? '')
     setEmail(u.emailAddress ?? '')
+    setIsClinician(!!u.isClinician)
     setIsLocum(!!u.isLocum)
     setAuthorisedSignatory(!!u.authorisedSignatory)
   }, [target, props.users])
@@ -141,6 +147,7 @@ function UserUpdateForm(props: {
       firstName, lastName,
       professionalRegNumber: regNum,
       emailAddress: email,
+      isClinician,
       isLocum,
       authorisedSignatory
     }) as Parameters<OrbApi['updateUser']>[2])
@@ -182,6 +189,8 @@ function UserUpdateForm(props: {
         <input value={regNum} onChange={e => setRegNum(e.target.value)} style={inputStyle} />
         <Label>Email</Label>
         <input value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+        <Label>Clinician</Label>
+        <label><input type="checkbox" checked={isClinician} onChange={e => setIsClinician(e.target.checked)} /> Yes</label>
         <Label>Locum</Label>
         <label><input type="checkbox" checked={isLocum} onChange={e => setIsLocum(e.target.checked)} /> Yes</label>
         <Label>Authorised Signatory</Label>

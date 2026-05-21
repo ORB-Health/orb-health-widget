@@ -275,7 +275,7 @@ export default function App() {
           }
         })
       } else {
-        widgetRef.current.setToken(data.accessToken)
+        widgetRef.current.refreshToken(data.accessToken)
         widgetRef.current.open({
           ehr_patient_id: selectedPatient,
           first_name: patient?.firstName || '',
