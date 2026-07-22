@@ -1,0 +1,2315 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ORB External API",
+    "description": "ORB External API – Integration guide for EHR systems.\n\nORB supports integration with clinical EHR systems, allowing clinicians to access NHS records\non patients within the EHR. The API has two main parts:\n\n- **Data Model Linkage** – connects Organisations, Users and Patients from the EHR into ORB\n- **Data Access** – allows the EHR system to show specific Patient data when requested by a specific User\n\nThis API is **organisation-scoped**: all patient and user operations occur in the context of an Organisation.\n\nExternal EHR IDs are used for Organisations, Users and Patients — ORB does not expose internal IDs.\n\n**Request validation (400):** When the request cannot be parsed or accepted—for example malformed JSON, a required body field missing, a query or path value in the wrong form (such as `offset=0sd` when an integer is expected), or a value outside the permitted set (such as `\"sex\": \"Female1\"` when only defined values are accepted), or a property not defined for that operation (such as an unknown field `\"newField\"` in a PATCH or POST request body)—and no narrower ORB `errorCode` applies, the response always includes `errorCode` **InvalidRequestData** and a single `errorMessage`. The body contains **only** these two members. `errorMessage` is intended for display: either a fixed general sentence or—commonly—a short line naming one query parameter and the rejected value when only that parameter is at fault (see **ErrorResponseInvalidRequestData** in components/schemas). Wording may change in later API versions; use `errorCode` for programmatic handling and **do not** parse `errorMessage` for business logic.\n",
+    "version": "1.0.2",
+    "contact": {
+      "name": "ORB Integration Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api-test-app.orbforhealth.com/v1",
+      "description": "TEST / Development )"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Organisations",
+      "description": "Create, update, delete and list organisations under the governing body"
+    },
+    {
+      "name": "Users",
+      "description": "Create, update, list and delete clinician users within an organisation"
+    },
+    {
+      "name": "Patients",
+      "description": "List, update, connect, and manage patient connections and permissions"
+    },
+    {
+      "name": "Patient Access",
+      "description": "Request short-lived access tokens for the ORB widget"
+    }
+  ],
+  "paths": {
+    "/organisations": {
+      "get": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "listOrganisations",
+        "summary": "List Organisations",
+        "description": "Returns a list of organisations under the Governing Body linked to the API key.\nIncludes suspension status and auto-delete date when suspended.\nFiltering by suspension status is optional.\n",
+        "parameters": [
+          {
+            "name": "suspended",
+            "in": "query",
+            "required": false,
+            "description": "Filter by suspension status. Omit to return all results.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrganisationSummary"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Governing Body corresponding to given API key not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}": {
+      "post": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "createOrganisation",
+        "summary": "Create Organisation",
+        "description": "Creates an Organisation in ORB under the GovBody associated with the API Key.\nAllowed before the organisation contract is signed (required for onboarding).\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganisationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organisation created"
+          },
+          "400": {
+            "description": "Creation failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errorMessage": "One or more fields contain invalid values. Please verify the input data.",
+                  "errorCode": "InvalidRequestData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No external client found for the provided API key",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errorMessage": "No external client found for the provided API key",
+                  "errorCode": "ClientNotFound"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Organisation already exists with the same extOrganisationId or organisationName",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errorMessage": "Organisation already exists",
+                  "errorCode": "IdNotAvailable"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "updateOrganisation",
+        "summary": "Update Organisation",
+        "description": "Updates organisation details or suspends/unsuspends the organisation.\nRequires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).\n\n- If an organisation is suspended it is not considered for billing, and no Users can access data via API.\n- Organisations cannot be suspended indefinitely. When suspending, the caller may specify `autoDeleteDays`\n  to set when automatic deletion happens. If not specified this happens in 180 days.\n- Organisations can be unsuspended to restore access for Users.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganisationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Organisation updated"
+          },
+          "400": {
+            "description": "Update failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation or Governing Body not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Organisation Name already exists",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "getOrganisation",
+        "summary": "Get Organisation",
+        "description": "Returns the organisation details for the given external organisation ID when it exists in the Governing Body linked to the API key.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organisation exists in Governing Body",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganisationSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "deleteOrganisation",
+        "summary": "Delete Organisation",
+        "description": "Delete the organisation and all associated users. Requires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).\nUse this if an organisation asks to turn OFF the integration permanently or if it leaves the EHR system.\n\nOnce deleted:\n- The extOrganisationId is no longer valid for use in any API calls.\n- If a patient has no other organisations linked to their profile, they will no longer be able to login.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organisation deleted (no response body)"
+          },
+          "400": {
+            "description": "Deletion failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/contract-status": {
+      "get": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "getOrganisationContractStatus",
+        "summary": "Get Organisation Contract Status",
+        "description": "Returns whether the organisation has signed the ORB organisation contract and when.\nAvailable before the contract is signed (not gated). Used by the host to decide whether to show the signing iframe.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contract status for the organisation",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractStatusResponse"
+                },
+                "examples": {
+                  "notSigned": {
+                    "summary": "Not signed",
+                    "value": {
+                      "extOrganisationId": "org-123",
+                      "contractSigned": false,
+                      "contractSignedAt": null
+                    }
+                  },
+                  "signed": {
+                    "summary": "Signed",
+                    "value": {
+                      "extOrganisationId": "org-123",
+                      "contractSigned": true,
+                      "contractSignedAt": "2026-05-22T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "EHR API disabled for this client",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found for this API key / client",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/contract-access-token": {
+      "post": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "createOrganisationContractAccessToken",
+        "summary": "Request Contract Access Token",
+        "description": "Mints a short-lived organisation-scoped token used to open the ORB organisation-contract signing iframe.\nAvailable before the contract is signed (not gated). The token identifies the API-key client and external organisation only (no patient or user claim).\nSee the Widget Integration Guide for iframe embedding and postMessage (`SET_TOKEN`, `CONTRACT_SIGNED`).\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contract access token issued",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Organisation suspended, or EHR API disabled for this client",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found for this API key / client",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/branding": {
+      "post": {
+        "tags": [
+          "Organisations"
+        ],
+        "operationId": "setOrganisationBranding",
+        "summary": "Set Organisation Branding",
+        "description": "Sets organisation branding used on the patient-facing NHS linking page (Connect Patient by Email / by Link):\nlogo image and/or NHS activation welcome text.\n\nRequires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).\n\nLogo changes apply only when `overwriteLogo` is true: send a file to replace the logo, or send no file to remove it.\nWhen `overwriteLogo` is false or omitted, the existing logo is left unchanged (any uploaded file is ignored).\nOptionally include `patientNHSActivationWelcomeTitle` and/or `patientNHSActivationWelcomeSubtitle` to update NHS\nactivation page text without resending the logo.\nAllowed logo formats: PNG, JPEG, JPG, SVG. Maximum file size: 1 MB.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Logo image (PNG, JPEG, JPG, or SVG; max 1 MB)"
+                  },
+                  "last_modified": {
+                    "type": "string"
+                  },
+                  "patientNHSActivationWelcomeTitle": {
+                    "type": "string",
+                    "description": "NHS activation page welcome title (applied when included in the request)"
+                  },
+                  "patientNHSActivationWelcomeSubtitle": {
+                    "type": "string",
+                    "description": "NHS activation page welcome subtitle (applied when included in the request)"
+                  },
+                  "overwriteLogo": {
+                    "type": "boolean",
+                    "description": "When true, update the stored logo (replace if a file is sent, remove if no file is sent). When false or omitted, the existing logo is not modified."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Organisation branding updated"
+          },
+          "400": {
+            "description": "Invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Organisation contract not signed, or EHR API disabled",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errorCode": "OrganisationContractNotSigned",
+                  "errorMessage": "The organisation contract has not been signed. Complete contract signing before using this API."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation or Governing Body not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type. Returned when the uploaded file is not PNG, JPEG, JPG, or SVG, when the file content does not match its declared type, or when the request is not multipart/form-data.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errorCode": "UnsupportedMediaType",
+                  "errorMessage": "This graphic must be supplied in PNG,JPEG or SVG formats."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "operationId": "listUsers",
+        "summary": "List Users",
+        "description": "Returns users for the organisation (regardless of whether the organisation is currently suspended).\nPagination is optional — if no pagination parameters are provided, all users are returned as an array.\nIf pagination parameters are provided, a paginated response with metadata is returned.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of users to return (1–1000). If omitted, all users are returned.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Number of users to skip before returning results. Only used when limit is provided.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — returns either a plain array (no pagination) or an object with pagination metadata.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/User"
+                      },
+                      "description": "Returned when no pagination parameters are provided"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PaginatedUsersResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters (limit > 1000, limit < 1, or offset < 0)",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/users/{extUserId}": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "operationId": "createUser",
+        "summary": "Create User",
+        "description": "Creates an ORB user within an ORB organisation, linked to the corresponding external User ID.\nUsed to grant a user access to the integration. Set `isClinician` to `true` for clinical users and `false` for non-clinical users. Only users with `isClinician: true` may request patient access tokens (see Request Access Token).\n\n- External IDs are unique within an Organisation and do not change.\n- ORB does not link or merge users based on personal attributes (e.g. name, professional registration number).\n- If the same person exists in multiple organisations in the EHR, a separate ORB user must be created for each.\n- User counts during a month may be used in billing; creation and deletion are logged.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extUserId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created"
+          },
+          "400": {
+            "description": "Creation failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "User already exists in this organisation with the same extUserId",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "operationId": "updateUser",
+        "summary": "Update User",
+        "description": "Updates one or more attributes of an existing user within an organisation.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extUserId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json; charset=utf-8": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated"
+          },
+          "400": {
+            "description": "Invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "operationId": "deleteUser",
+        "summary": "Delete User",
+        "description": "Deletes the specified user from the organisation. After deletion, the user will no longer be able to access the integration for this organisation.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extUserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted (no response body)"
+          },
+          "404": {
+            "description": "User or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients": {
+      "get": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "listPatients",
+        "summary": "List Patients",
+        "description": "Returns a list of patients for the specified organisation.\nPagination is optional — if no pagination parameters are provided, all patients are returned as an array.\nIf pagination parameters are provided, a paginated response with metadata is returned.\nFilters can be combined using AND logic.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of patients to return (1–1000). If omitted, all patients are returned.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Number of patients to skip before returning results. Only used when limit is provided.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "connectionStatus",
+            "in": "query",
+            "required": false,
+            "description": "Filter by connection status.",
+            "schema": {
+              "$ref": "#/components/schemas/ConnectionStatus"
+            }
+          },
+          {
+            "name": "dataAccessStatus",
+            "in": "query",
+            "required": false,
+            "description": "Filter by data access request status.",
+            "schema": {
+              "$ref": "#/components/schemas/DataAccessStatus"
+            }
+          },
+          {
+            "name": "patientDataAccessLimited",
+            "in": "query",
+            "required": false,
+            "description": "When true, filter to patients which have restricted their data (patient-side).",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "gpDataAccessLimited",
+            "in": "query",
+            "required": false,
+            "description": "When true, filter to patients which have their data blocked from GP side.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "dobMismatch",
+            "in": "query",
+            "required": false,
+            "description": "When true, filter to patients whose date of birth in ORB mismatches the one in NHS.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "surnameMismatch",
+            "in": "query",
+            "required": false,
+            "description": "When true, filter to patients whose surname in ORB mismatches the one in NHS.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — returns either a plain array (no pagination) or an object with pagination metadata.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PatientSummary"
+                      },
+                      "description": "Returned when no pagination parameters are provided"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PaginatedPatientsResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters or invalid filter values / combinations",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}/connection-email": {
+      "post": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "connectPatientByEmail",
+        "summary": "Connect Patient by Email",
+        "description": "Sends an email inviting a patient to sign up and grant permission for the organisation to view NHS records.\n\n- If the patient does not exist, ORB creates a new patient record and sends an NHS invitation email.\n- If the patient exists but is not connected, ORB sends the invitation email directly.\n- If the patient is already connected, it sends a data access request email.\n\nThe EHR may call this endpoint again to send a **reminder**. Rate limits apply: at most two NHS invitation\nemails and at most two data access request emails per patient per organisation per 24 hours; invitation\ncan be resent when `resend` is true while the invitation limit allows.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nData-access / consent emails use an authenticated ORB login URL with no separate link expiry.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectPatientByEmailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invite sent",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientConnectionStatus"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Patient already invited. No invite sent unless `resend` flag is true, but data access request is sent when applicable.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientConnectionStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Connection failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation or requesting clinician not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — external patient ID already in use, or DOB/surname mismatch with ORB record",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DataMismatch — NHS login revealed a mismatch between ORB and NHS data",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientConnectionStatus"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded — the maximum number of connection emails allowed per patient per organisation in 24 hours has been reached"
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}/connection-link": {
+      "post": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "connectPatientByLink",
+        "summary": "Connect Patient by Link",
+        "description": "Returns an invitation link which can be sent to a patient as part of a link request.\n\n- If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link.\n- If the patient exists but is not connected, an NHS invitation link is returned.\n- If the patient is already connected, response code 201 is returned with no invitation link.\n\nIn all previous cases, if a data access request link can still be issued under the rate limits,\na data access request link is built and returned too.\n\nCalling this endpoint again allows the EHR to obtain a fresh link as a **reminder**. Invitation and\ndata access request links are only returned while the respective limits in the last 24 hours for this\npatient and organisation have not been exceeded (at most two NHS invitation links and at most two\ndata access request links per 24 hours).\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nThe data-access / consent link is an authenticated ORB login URL with no separate link expiry.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectPatientByLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Patient was not invited yet, or invitation expired. Links returned.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectPatientByLinkResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Patient already invited. No invite link returned unless `resend` flag is true, but data access request link is returned when applicable.",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectPatientByLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Connection failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organisation or requesting clinician not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — external patient ID already in use, or DOB/surname mismatch with ORB record",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DataMismatch — NHS login revealed a mismatch between ORB and NHS data",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectPatientByLinkResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded — the maximum number of connection links allowed per patient per organisation in 24 hours has been reached"
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}/connection": {
+      "get": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "getPatientConnectionStatus",
+        "summary": "Get Patient Connection Status",
+        "description": "Returns the connection status and access levels for the patient. Includes nhsNumber from NHS Login in ORB when on record (read-only; omitted or null otherwise).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientConnectionStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "removePatientConnection",
+        "summary": "Remove Patient Connection",
+        "description": "Removes the link between the patient and the organisation. Use this when a patient leaves a clinic;\ndoing so is treated as an implied retraction of the organisation's permission to view that patient's records.\n\nThis is an **unlink** only for the organisation in the request:\n\n- The EHR connection for this organisation is removed (List Patients / token / connection / status / permissions for this patient and organisation fail).\n- The patient-to-organisation link for that organisation is also removed.\n- The underlying patient account, PatientLogin, and NHS/IM1 data are retained. Other organisation links are untouched.\n- If the patient still has other organisations, they can continue to log in and use those.\n- If this was the patient's last organisation, they cannot log in until linked to at least one organisation again; the account and any completed NHS registration are kept.\n- On re-connect, ORB treats them as an existing patient and typically returns a data-access / data-share link rather than a new NHS invitation link.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection removed (no response body)"
+          },
+          "400": {
+            "description": "Deletion failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}/permissions": {
+      "get": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "getGrantedPermissions",
+        "summary": "Get Granted Permissions",
+        "description": "Returns the list of data permissions that the patient has granted to this organisation.\nRequires that the patient is connected to the organisation.\n\nIf the patient connection status is `Connected`, this endpoint returns the granted permissions.\nIf the connection status is `InviteSent` or `DataMismatch`, this endpoint returns 404.\n\nThis endpoint is informational only — the access token request endpoint will automatically\nvalidate permissions before issuing a token.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — returns array of permission names",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "Allergies",
+                      "Medication History",
+                      "Immunisations",
+                      "Problems",
+                      "TestResults",
+                      "Documents",
+                      "Consultation History"
+                    ]
+                  },
+                  "example": [
+                    "Allergies",
+                    "Medication History",
+                    "Immunisations"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Organisation not authorised to view this patient",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient or organisation not found, or patient connection not established",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}": {
+      "patch": {
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "updatePatient",
+        "summary": "Update Patient",
+        "description": "Updates one or more demographic attributes of an existing patient within an organisation.\nTypically used when the EHR updates patient details such as contact information or postcode.\n\n- If `dateOfBirth` or `lastName` are supplied, they are **validated** against existing ORB data (not overwritten).\n  If they do not match, the request fails with 409.\n- Other supplied fields overwrite ORB data according to data priority rules (NHS data takes precedence).\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePatientRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Patient updated — returns current demographic fields stored in ORB after the update",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientDemographics"
+                },
+                "example": {
+                  "title": "Ms",
+                  "sex": "Male",
+                  "dateOfBirth": "1933-11-14",
+                  "firstName": "Simon",
+                  "lastName": "OLLEY",
+                  "postcode": "asdas123",
+                  "emailAddress": "patient@example.com"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Update failed due to invalid request or validation error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — request body DOB/surname does not match existing ORB patient record",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organisations/{extOrganisationId}/patients/{extPatientId}/access-token": {
+      "post": {
+        "tags": [
+          "Patient Access"
+        ],
+        "operationId": "requestAccessToken",
+        "summary": "Request Access Token",
+        "description": "Returns a short-lived JWT used to access patient data via the ORB widget (iframe).\n\n**Security Model:**\n- The EHR must make this request server-side (never from the browser).\n- The request must include the `extUserId` of the clinician requesting access.\n- ORB validates that the user exists and belongs to the organisation, the user has `isClinician: true`, the organisation is not suspended,\n  the organisation has access to the patient, and the patient has granted the necessary permissions.\n- The returned JWT is scoped to the specific user, patient, and organisation.\n- Token expires in 15 minutes.\n- Requesting an access token is recorded as clinician access for audit purposes.\n- Issuing a token does **not** mean clinician widget T&C are accepted. T&C are enforced inside the ORB widget (per user per organisation, mandatory tick-box; NHS data blocked until accepted). The External API does not expose accept/query endpoints for T&C.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/extOrganisationId"
+          },
+          {
+            "$ref": "#/components/parameters/extPatientId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token issued successfully",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing extUserId)",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied — user not authorised (including `isClinician: false`, `errorCode`: `NonClinicianAccess`), organisation suspended, or patient permissions insufficient",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Patient, user, or organisation not found",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json; charset=utf-8": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY",
+        "description": "API Key issued by ORB. Each key is linked to one External EHR (Governing Body / GovBody).\nA GovBody may contain multiple Organisations.\n"
+      }
+    },
+    "parameters": {
+      "extOrganisationId": {
+        "name": "extOrganisationId",
+        "in": "path",
+        "required": true,
+        "description": "External organisation ID (EHR)",
+        "schema": {
+          "type": "string"
+        },
+        "example": "extOrganizationKey"
+      },
+      "extUserId": {
+        "name": "extUserId",
+        "in": "path",
+        "required": true,
+        "description": "External user ID (EHR)",
+        "schema": {
+          "type": "string"
+        },
+        "example": "extUserKey"
+      },
+      "extPatientId": {
+        "name": "extPatientId",
+        "in": "path",
+        "required": true,
+        "description": "External patient ID (EHR)",
+        "schema": {
+          "type": "string"
+        },
+        "example": "extPatientKey"
+      }
+    },
+    "schemas": {
+      "ConnectionStatus": {
+        "type": "string",
+        "enum": [
+          "InviteNotSent",
+          "InviteSent",
+          "InviteExpired",
+          "DataMismatch",
+          "Connected"
+        ],
+        "description": "Patient's NHS login / connection state.\n- **InviteNotSent** – Invitation not yet sent\n- **InviteSent** – Invitation sent, patient has not logged in via NHS yet\n- **InviteExpired** – Invitation sent but expired\n- **DataMismatch** – NHS login revealed a mismatch between ORB and NHS data\n- **Connected** – Patient completed a valid NHS registration with no mismatches\n"
+      },
+      "DataAccessStatus": {
+        "type": "string",
+        "enum": [
+          "RequestNotSent",
+          "RequestSent",
+          "Reviewed"
+        ],
+        "description": "Whether the patient has been asked to grant data access and whether they have done so.\n- **RequestNotSent** – Request not sent yet\n- **RequestSent** – Request sent to the patient\n- **Reviewed** – Patient granted the organisation access to some NHS data\n"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "ClientNotFound",
+          "OrgNotFound",
+          "OrgLinkNotFound",
+          "UserNotFound",
+          "PatientNotFound",
+          "InvalidParameter",
+          "InvalidProperty",
+          "InvalidRequestData",
+          "IdNotAvailable",
+          "NameNotAvailable",
+          "EmailNotAvailable",
+          "DobMismatch",
+          "SurnameMismatch",
+          "PatientInvalidStatus",
+          "ResendLimitExceeded",
+          "OrganisationContractNotSigned",
+          "GenericError"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "errorMessage": {
+            "type": "string",
+            "description": "Human-readable error message",
+            "example": "Organisation not found"
+          },
+          "errorCode": {
+            "$ref": "#/components/schemas/ErrorCode",
+            "description": "Omitted for some unexpected errors; use InvalidRequestData when the request body, query string, or path cannot be parsed or validated successfully (see ErrorResponseInvalidRequestData)"
+          }
+        },
+        "required": [
+          "errorMessage"
+        ],
+        "example": {
+          "errorMessage": "No external client found for the provided API key",
+          "errorCode": "ClientNotFound"
+        }
+      },
+      "ErrorResponseInvalidRequestData": {
+        "type": "object",
+        "description": "Returned when the request body, query string, or path cannot be parsed or validated successfully, and no narrower\n`errorCode` applies. The response body is always the compact JSON object with `errorCode` and `errorMessage` only,\nas for **InvalidRequestData** in the API specification (Common Errors). `errorMessage` is assigned as follows:\n\n- **General message** — Used when more than one validation issue is reported for the same request, and in typical\n  cases where the problem lies in the **JSON request body** only—including a value outside a permitted enumeration\n  (for example `\"sex\": \"Female1\"` when only defined values are accepted), or a property not defined for that operation\n  (for example an unknown or misspelled field name in a PATCH or POST body). Request bodies must contain only properties\n  listed for that endpoint; extra properties are rejected with 400, not ignored. In these cases `errorMessage` is a single\n  standard sentence; clients must not assume a field-by-field breakdown in the message text.\n\n- **Per-parameter message (query)** — Typically used when a **single** query (or equivalent) parameter does not match\n  its expected type; `errorMessage` may then identify the parameter and the supplied value.\n\nOther isolated query-parameter errors may follow the same pattern. The exact wording of `errorMessage` is not\nguaranteed across API versions; use it for display only and base integration logic on `errorCode`.\n",
+        "properties": {
+          "errorCode": {
+            "type": "string",
+            "enum": [
+              "InvalidRequestData"
+            ]
+          },
+          "errorMessage": {
+            "type": "string",
+            "description": "Intended for display: either the fixed general sentence, or—commonly—a short per-parameter line naming one query parameter and the rejected value when only that parameter is at fault (for example `The value '0sd' is not valid for Offset.`).\n",
+            "example": "One or more fields contain invalid values. Please verify the input data."
+          }
+        },
+        "required": [
+          "errorCode",
+          "errorMessage"
+        ],
+        "example": {
+          "errorCode": "InvalidRequestData",
+          "errorMessage": "One or more fields contain invalid values. Please verify the input data."
+        }
+      },
+      "PaginationMetadata": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Total number of records"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records requested per page"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records skipped"
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Whether there are more records available"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset",
+          "hasMore"
+        ]
+      },
+      "CreateOrganisationRequest": {
+        "type": "object",
+        "required": [
+          "organisationName",
+          "address1",
+          "address2",
+          "postcode",
+          "phoneNumber",
+          "cqcRegistrationNumber"
+        ],
+        "properties": {
+          "organisationName": {
+            "type": "string",
+            "description": "Unique Organisation name (case-insensitive)"
+          },
+          "address1": {
+            "type": "string",
+            "description": "First line of address"
+          },
+          "address2": {
+            "type": "string",
+            "description": "Second line of address"
+          },
+          "address3": {
+            "type": "string",
+            "description": "Third line of address"
+          },
+          "address4": {
+            "type": "string",
+            "description": "Fourth line of address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postcode"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Phone number"
+          },
+          "cqcRegistrationNumber": {
+            "type": "string",
+            "description": "CQC registration number"
+          },
+          "researchOptOut": {
+            "type": "boolean",
+            "description": "Research opt-out flag (defaults to false)",
+            "default": false
+          }
+        }
+      },
+      "UpdateOrganisationRequest": {
+        "type": "object",
+        "properties": {
+          "organisationName": {
+            "type": "string",
+            "description": "Unique Organisation name (case-insensitive)"
+          },
+          "address1": {
+            "type": "string",
+            "description": "First line of address"
+          },
+          "address2": {
+            "type": "string",
+            "description": "Second line of address"
+          },
+          "address3": {
+            "type": "string",
+            "description": "Third line of address"
+          },
+          "address4": {
+            "type": "string",
+            "description": "Fourth line of address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postcode"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Phone number"
+          },
+          "cqcRegistrationNumber": {
+            "type": "string",
+            "description": "CQC registration number"
+          },
+          "researchOptOut": {
+            "type": "boolean",
+            "description": "Research opt-out flag"
+          },
+          "suspended": {
+            "type": "boolean",
+            "description": "Suspended flag"
+          },
+          "autoDeleteDays": {
+            "type": "integer",
+            "description": "Auto-delete after suspension in days (max 180, default 180)",
+            "maximum": 180,
+            "default": 180
+          }
+        }
+      },
+      "OrganisationSummary": {
+        "type": "object",
+        "properties": {
+          "extOrganisationId": {
+            "type": "string",
+            "description": "External organisation ID (EHR)"
+          },
+          "organisationName": {
+            "type": "string",
+            "description": "Organisation name"
+          },
+          "suspended": {
+            "type": "boolean",
+            "description": "Suspension status"
+          },
+          "autoDeleteDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Auto-delete date in YYYY-MM-DD format when suspended; null if not set"
+          }
+        },
+        "required": [
+          "extOrganisationId",
+          "organisationName",
+          "suspended"
+        ]
+      },
+      "ContractStatusResponse": {
+        "type": "object",
+        "properties": {
+          "extOrganisationId": {
+            "type": "string",
+            "description": "Echo of path parameter"
+          },
+          "contractSigned": {
+            "type": "boolean",
+            "description": "true if the organisation contract has been signed"
+          },
+          "contractSignedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 timestamp of signing; null if not signed"
+          }
+        },
+        "required": [
+          "extOrganisationId",
+          "contractSigned"
+        ]
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "required": [
+          "firstName",
+          "lastName",
+          "professionalRegNumber",
+          "isClinician",
+          "isLocum",
+          "authorisedSignatory"
+        ],
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "User's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "User's last name"
+          },
+          "professionalRegNumber": {
+            "type": "string",
+            "description": "Professional registration number"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "User's email address"
+          },
+          "isClinician": {
+            "type": "boolean",
+            "description": "`true` if the user is a clinical user; `false` for non-clinical users (e.g. administrative). Only clinical users may request patient access tokens."
+          },
+          "isLocum": {
+            "type": "boolean",
+            "description": "`true` if the user is a temporary locum; `false` if a permanent employee"
+          },
+          "authorisedSignatory": {
+            "type": "boolean",
+            "description": "`true` if this user is an authorised signatory for the organisational contract (host-side marker; ORB does not re-check this flag when accepting the organisation contract in the iframe)"
+          }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "User's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "User's last name"
+          },
+          "professionalRegNumber": {
+            "type": "string",
+            "description": "Professional registration number"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "User's email address"
+          },
+          "isClinician": {
+            "type": "boolean",
+            "description": "If supplied, updates whether the user is a clinical user (`true`) or non-clinical (`false`)"
+          },
+          "isLocum": {
+            "type": "boolean",
+            "description": "If supplied, updates whether the user is a locum (`true`) or permanent (`false`)"
+          },
+          "authorisedSignatory": {
+            "type": "boolean",
+            "description": "If supplied, updates authorised signatory flag for the organisational contract (host-side marker)"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "extUserId": {
+            "type": "string",
+            "description": "External user ID (EHR)"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "User's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "User's last name"
+          },
+          "professionalRegNumber": {
+            "type": "string",
+            "description": "Professional registration number"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "User's email address"
+          },
+          "isClinician": {
+            "type": "boolean",
+            "description": "`true` if clinical user; `false` if non-clinical"
+          },
+          "isLocum": {
+            "type": "boolean",
+            "description": "`true` if locum; `false` if permanent employee"
+          },
+          "authorisedSignatory": {
+            "type": "boolean",
+            "description": "`true` if authorised signatory for the organisational contract (host-side marker)"
+          }
+        },
+        "required": [
+          "extUserId",
+          "firstName",
+          "lastName",
+          "professionalRegNumber",
+          "isClinician",
+          "isLocum",
+          "authorisedSignatory"
+        ]
+      },
+      "PaginatedUsersResponse": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMetadata"
+          }
+        },
+        "required": [
+          "users",
+          "pagination"
+        ]
+      },
+      "UpdatePatientRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Patient title"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name (surname) — validated, not overwritten"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth in YYYY-MM-DD format — validated, not overwritten"
+          },
+          "sex": {
+            "type": "string",
+            "description": "Patient sex (e.g. Male, Female)"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "Patient email address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Patient postcode"
+          }
+        }
+      },
+      "PatientDemographics": {
+        "type": "object",
+        "description": "Current patient demographic fields in ORB after a successful update.\nDoes not include extPatientId, connectionStatus, or other list-only fields.\nValues may differ from the PATCH request where NHS data takes precedence or where\ndateOfBirth / lastName were validated but not overwritten.\n",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Patient title (e.g. Mr, Ms)"
+          },
+          "sex": {
+            "type": "string",
+            "description": "Patient sex (e.g. Male, Female)"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth in YYYY-MM-DD format"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name (surname)"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Patient postcode"
+          },
+          "emailAddress": {
+            "type": "string",
+            "nullable": true,
+            "description": "Patient email address"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "postcode"
+        ]
+      },
+      "PatientSummary": {
+        "type": "object",
+        "properties": {
+          "extPatientId": {
+            "type": "string",
+            "description": "External patient ID (EHR)"
+          },
+          "title": {
+            "type": "string",
+            "description": "Patient title"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth in YYYY-MM-DD format"
+          },
+          "sex": {
+            "type": "string",
+            "description": "Patient sex (e.g. Male, Female)"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "Patient email address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Patient postcode"
+          },
+          "connectionStatus": {
+            "$ref": "#/components/schemas/ConnectionStatus"
+          },
+          "dobMismatch": {
+            "type": "boolean",
+            "description": "True if date of birth mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "surnameMismatch": {
+            "type": "boolean",
+            "description": "True if surname mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "patientDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the patient has restricted their data partially or totally"
+          },
+          "gpDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the GP has blocked the patient's data partially or totally"
+          },
+          "dataAccessStatus": {
+            "$ref": "#/components/schemas/DataAccessStatus"
+          },
+          "oldestNhsRecordDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date of oldest NHS record received (ISO-8601); null if none"
+          },
+          "lastInvitationEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last NHS registration invitation email sent"
+          },
+          "lastAccessRequestEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last data access request email sent"
+          }
+        },
+        "required": [
+          "extPatientId",
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "emailAddress",
+          "connectionStatus"
+        ]
+      },
+      "PaginatedPatientsResponse": {
+        "type": "object",
+        "properties": {
+          "patients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatientSummary"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMetadata"
+          }
+        },
+        "required": [
+          "patients",
+          "pagination"
+        ]
+      },
+      "PatientConnectionStatus": {
+        "type": "object",
+        "properties": {
+          "connectionStatus": {
+            "$ref": "#/components/schemas/ConnectionStatus"
+          },
+          "dobMismatch": {
+            "type": "boolean",
+            "description": "True if date of birth mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "surnameMismatch": {
+            "type": "boolean",
+            "description": "True if surname mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "patientDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the patient has restricted their data partially or totally"
+          },
+          "gpDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the GP has blocked the patient's data partially or totally"
+          },
+          "dataAccessStatus": {
+            "$ref": "#/components/schemas/DataAccessStatus"
+          },
+          "oldestNhsRecordDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date of oldest NHS record received (ISO-8601); null if none"
+          },
+          "lastInvitationEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last NHS registration invitation email sent"
+          },
+          "lastAccessRequestEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last data access request email sent"
+          }
+        },
+        "required": [
+          "connectionStatus"
+        ]
+      },
+      "PatientConnectionStatusResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PatientConnectionStatus"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "nhsNumber": {
+                "type": "string",
+                "nullable": true,
+                "description": "NHS number from the patient's NHS Login record in ORB (read-only; set via NHS Login verification only). Omitted or null if the patient has no NHS Login on record."
+              }
+            }
+          }
+        ]
+      },
+      "ConnectPatientByEmailRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "sex",
+          "emailAddress",
+          "postcode",
+          "requestingClinicianId"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Patient title"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth in YYYY-MM-DD format"
+          },
+          "sex": {
+            "type": "string",
+            "description": "Patient sex (e.g. Male, Female)"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "Patient email address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Patient postcode"
+          },
+          "requestingClinicianId": {
+            "type": "string",
+            "description": "External user ID of the requesting clinician"
+          },
+          "resend": {
+            "type": "boolean",
+            "description": "True to force resend of the email if already invited"
+          }
+        }
+      },
+      "ConnectPatientByLinkRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "sex",
+          "emailAddress",
+          "postcode",
+          "requestingClinicianId"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Patient title"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth in YYYY-MM-DD format"
+          },
+          "sex": {
+            "type": "string",
+            "description": "Patient sex (e.g. Male, Female)"
+          },
+          "emailAddress": {
+            "type": "string",
+            "description": "Patient email address"
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Patient postcode"
+          },
+          "requestingClinicianId": {
+            "type": "string",
+            "description": "External user ID of the requesting clinician"
+          },
+          "resend": {
+            "type": "boolean",
+            "description": "True to force resend of the link if already invited"
+          }
+        }
+      },
+      "ConnectPatientByLinkResponse": {
+        "type": "object",
+        "properties": {
+          "invitationLink": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL to the patient invitation that can be shared or displayed"
+          },
+          "dataAccessRequestLink": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL for the patient to grant data access to the organisation"
+          },
+          "connectionStatus": {
+            "$ref": "#/components/schemas/ConnectionStatus"
+          },
+          "dobMismatch": {
+            "type": "boolean",
+            "description": "True if date of birth mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "surnameMismatch": {
+            "type": "boolean",
+            "description": "True if surname mismatch detected (when connectionStatus is DataMismatch)"
+          },
+          "patientDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the patient has restricted their data partially or totally"
+          },
+          "gpDataAccessLimited": {
+            "type": "boolean",
+            "description": "True if the GP has blocked the patient's data partially or totally"
+          },
+          "dataAccessStatus": {
+            "$ref": "#/components/schemas/DataAccessStatus"
+          },
+          "oldestNhsRecordDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Date of oldest NHS record received (ISO-8601); null if none"
+          },
+          "lastInvitationEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last NHS registration invitation email sent"
+          },
+          "lastAccessRequestEmailDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 date of the last data access request email sent"
+          }
+        },
+        "required": [
+          "connectionStatus"
+        ]
+      },
+      "AccessTokenRequest": {
+        "type": "object",
+        "required": [
+          "extUserId"
+        ],
+        "properties": {
+          "extUserId": {
+            "type": "string",
+            "description": "External user ID (EHR) of the requesting clinician"
+          }
+        }
+      },
+      "AccessTokenResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Short-lived JWT token for accessing patient data (expires in expiresIn seconds)"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Token expiration time in seconds (typically 900 = 15 minutes)",
+            "example": 900
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresIn"
+        ]
+      }
+    }
+  }
+}
