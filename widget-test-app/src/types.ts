@@ -11,4 +11,11 @@ export interface LogEntry {
   requestHeaders?: Record<string, string>
 }
 
-export type TabName = 'widget' | 'orgs' | 'users' | 'patients'
+export type TabName = 'widget' | 'orgs' | 'users' | 'patients' | 'contract'
+
+/** Returned by GET /organisations/{id}/contract-status. */
+export interface OrgContractStatus {
+  extOrganisationId: string
+  contractSigned: boolean
+  contractSignedAt: string | null
+}

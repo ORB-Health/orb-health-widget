@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { OrbApi, OrgItem } from '../orbApi'
 import { usePersistedState } from '../storage'
 import { stripEmpty } from '../helpers'
@@ -12,17 +12,19 @@ export function OrgsTab(props: {
   onRefreshOrgs: () => void
   onChanged: () => void
 }) {
-  const [sub, setSub] = usePersistedState<'create' | 'update' | 'list'>('orgSubTab', 'create')
+  const [sub, setSub] = usePersistedState<'create' | 'update' | 'branding' | 'list'>('orgSubTab', 'create')
 
   return (
     <>
       <SubTabs value={sub} onChange={setSub} tabs={[
         { key: 'create', label: 'Create' },
         { key: 'update', label: 'Update / Manage' },
+        { key: 'branding', label: 'Branding' },
         { key: 'list', label: 'List' }
       ]} />
       {sub === 'create' && <OrgCreateForm orb={props.orb} onChanged={props.onChanged} />}
       {sub === 'update' && <OrgUpdateForm orb={props.orb} orgs={props.orgs} onRefresh={props.onRefreshOrgs} onChanged={props.onChanged} />}
+      {sub === 'branding' && <OrgBrandingForm orb={props.orb} orgs={props.orgs} />}
       {sub === 'list' && <OrgListPanel orb={props.orb} />}
     </>
   )
@@ -39,8 +41,6 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [cqc, setCqc] = useState('')
   const [researchOptOut, setResearchOptOut] = useState(false)
-  const [signatoryName, setSignatoryName] = useState('')
-  const [signatoryEmail, setSignatoryEmail] = useState('')
 
   const randomize = () => {
     const r = randomOrgData()
@@ -49,15 +49,12 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
     setAddress3(r.address3); setAddress4(r.address4)
     setPostcode(r.postcode); setPhoneNumber(r.phoneNumber)
     setCqc(r.cqc); setResearchOptOut(false)
-    setSignatoryName(r.signatoryName)
-    setSignatoryEmail(r.signatoryEmail)
   }
 
   const clear = () => {
     setId(''); setName(''); setAddress1(''); setAddress2('')
     setAddress3(''); setAddress4('')
     setPostcode(''); setPhoneNumber(''); setCqc(''); setResearchOptOut(false)
-    setSignatoryName(''); setSignatoryEmail('')
   }
 
   const create = async () => {
@@ -67,9 +64,7 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
       address1, address2, address3, address4,
       postcode, phoneNumber,
       cqcRegistrationNumber: cqc,
-      researchOptOut,
-      authorisedSignatoryName: signatoryName,
-      authorisedSignatoryEmail: signatoryEmail
+      researchOptOut
     }) as Parameters<OrbApi['createOrganisation']>[1])
     props.onChanged()
   }
@@ -95,10 +90,6 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
         <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} />
         <Label>CQC Reg Number</Label>
         <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} />
-        <Label>Authorised Signatory Name</Label>
-        <input value={signatoryName} onChange={e => setSignatoryName(e.target.value)} style={inputStyle} />
-        <Label>Authorised Signatory Email</Label>
-        <input value={signatoryEmail} onChange={e => setSignatoryEmail(e.target.value)} style={inputStyle} />
         <Label>Research Opt-Out</Label>
         <label><input type="checkbox" checked={researchOptOut} onChange={e => setResearchOptOut(e.target.checked)} /> Yes</label>
       </Grid2>
@@ -127,8 +118,6 @@ function OrgUpdateForm(props: {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [cqc, setCqc] = useState('')
   const [researchOptOut, setResearchOptOut] = useState(false)
-  const [signatoryName, setSignatoryName] = useState('')
-  const [signatoryEmail, setSignatoryEmail] = useState('')
   const [autoDeleteDays, setAutoDeleteDays] = useState('')
   const [current, setCurrent] = useState<OrgItem | null>(null)
 
@@ -141,16 +130,16 @@ function OrgUpdateForm(props: {
         if (cancelled || !ok || !data) return
         setCurrent(data)
         setName(data.organisationName ?? '')
-        setAddress1(data.address1 ?? '')
-        setAddress2(data.address2 ?? '')
-        setAddress3(data.address3 ?? '')
-        setAddress4(data.address4 ?? '')
-        setPostcode(data.postcode ?? '')
-        setPhoneNumber(data.phoneNumber ?? '')
-        setCqc(data.cqcRegistrationNumber ?? '')
-        setResearchOptOut(!!data.researchOptOut)
-        setSignatoryName(data.authorisedSignatoryName ?? '')
-        setSignatoryEmail(data.authorisedSignatoryEmail ?? '')
+        // Address / phone / CQC / researchOptOut are write-only - the server
+        // does not return them, so leave the inputs blank for user-driven input.
+        setAddress1('')
+        setAddress2('')
+        setAddress3('')
+        setAddress4('')
+        setPostcode('')
+        setPhoneNumber('')
+        setCqc('')
+        setResearchOptOut(false)
       } catch { /* logged */ }
     })()
     return () => { cancelled = true }
@@ -164,8 +153,6 @@ function OrgUpdateForm(props: {
     setAddress3(r.address3); setAddress4(r.address4)
     setPostcode(r.postcode); setPhoneNumber(r.phoneNumber)
     setCqc(r.cqc)
-    setSignatoryName(r.signatoryName)
-    setSignatoryEmail(r.signatoryEmail)
   }
 
   const save = async () => {
@@ -173,9 +160,7 @@ function OrgUpdateForm(props: {
     await props.orb.updateOrganisation(target, stripEmpty({
       organisationName: name, address1, address2, address3, address4,
       postcode, phoneNumber, cqcRegistrationNumber: cqc,
-      researchOptOut,
-      authorisedSignatoryName: signatoryName,
-      authorisedSignatoryEmail: signatoryEmail
+      researchOptOut
     }) as Parameters<OrbApi['updateOrganisation']>[1])
     props.onChanged()
   }
@@ -240,10 +225,6 @@ function OrgUpdateForm(props: {
           <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
           <Label>CQC Reg Number <NotReturned /></Label>
           <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
-          <Label>Authorised Signatory Name <NotReturned /></Label>
-          <input value={signatoryName} onChange={e => setSignatoryName(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
-          <Label>Authorised Signatory Email <NotReturned /></Label>
-          <input value={signatoryEmail} onChange={e => setSignatoryEmail(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
           <Label>Research Opt-Out <NotReturned /></Label>
           <label><input type="checkbox" checked={researchOptOut} onChange={e => setResearchOptOut(e.target.checked)} /> Yes</label>
         </Grid2>
@@ -271,6 +252,79 @@ function OrgUpdateForm(props: {
         )}
       </Section>
     </>
+  )
+}
+
+function OrgBrandingForm(props: { orb: OrbApi; orgs: OrgItem[] }) {
+  const [target, setTarget] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [welcomeTitle, setWelcomeTitle] = useState('')
+  const [welcomeSubtitle, setWelcomeSubtitle] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] ?? null)
+  }
+
+  const clear = () => {
+    setFile(null)
+    setWelcomeTitle('')
+    setWelcomeSubtitle('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const upload = async () => {
+    if (!target) return
+    await props.orb.setOrganisationBranding(target, {
+      file: file ?? undefined,
+      ...(welcomeTitle ? { patientNHSActivationWelcomeTitle: welcomeTitle } : {}),
+      ...(welcomeSubtitle ? { patientNHSActivationWelcomeSubtitle: welcomeSubtitle } : {}),
+    })
+  }
+
+  const removeLogo = async () => {
+    if (!target) return
+    if (!confirm(`Remove the existing logo for ${target}? An empty multipart body is posted.`)) return
+    await props.orb.setOrganisationBranding(target, {})
+    clear()
+  }
+
+  return (
+    <Section title="Set Organisation Branding">
+      <Hint>
+        <code>POST /organisations/{'{id}'}/branding</code> is multipart/form-data.
+        Send a <b>file</b> (PNG / JPEG / JPG / SVG, max 1MB) to set or replace the logo.
+        Send an empty body (no file, no text) to remove the logo. The welcome-text fields
+        are optional and only updated when included.
+      </Hint>
+      <Grid2>
+        <Label>Target organisation</Label>
+        <select value={target} onChange={e => setTarget(e.target.value)} style={inputStyle}>
+          <option value="">-- select --</option>
+          {props.orgs.map(o => (
+            <option key={o.extOrganisationId} value={o.extOrganisationId}>
+              {o.organisationName} ({o.extOrganisationId}){o.suspended ? ' [SUSPENDED]' : ''}
+            </option>
+          ))}
+        </select>
+        <Label>Logo file</Label>
+        <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" onChange={onFile} style={inputStyle} />
+        <Label>NHS welcome title</Label>
+        <input value={welcomeTitle} onChange={e => setWelcomeTitle(e.target.value)} style={inputStyle} placeholder="(optional)" />
+        <Label>NHS welcome subtitle</Label>
+        <input value={welcomeSubtitle} onChange={e => setWelcomeSubtitle(e.target.value)} style={inputStyle} placeholder="(optional)" />
+      </Grid2>
+      {file && (
+        <p style={{ color: '#666', fontSize: 12, marginTop: 8 }}>
+          Selected: <b>{file.name}</b> ({Math.round(file.size / 1024)} KB, {file.type || 'unknown type'})
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <button onClick={upload} style={{ ...btnStyle, ...btnPrimary }} disabled={!target}>POST branding</button>
+        <button onClick={removeLogo} style={{ ...btnStyle, ...btnDanger }} disabled={!target}>Remove logo (empty body)</button>
+        <button onClick={clear} style={btnStyle}>Clear inputs</button>
+      </div>
+    </Section>
   )
 }
 

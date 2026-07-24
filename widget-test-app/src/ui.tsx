@@ -41,6 +41,22 @@ export function Hint({ children }: { children: ReactNode }) {
   )
 }
 
+// Spin animation lives in App's global <style> block (.orb-spin).
+export function Spinner({ size = 14, style }: { size?: number; style?: CSSProperties }) {
+  return (
+    <span
+      className="orb-spin"
+      role="status"
+      aria-label="Loading"
+      style={{
+        display: 'inline-block', width: size, height: size, boxSizing: 'border-box',
+        border: '2px solid #e0e0e0', borderTopColor: '#F5450A', borderRadius: '50%',
+        ...style
+      }}
+    />
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------

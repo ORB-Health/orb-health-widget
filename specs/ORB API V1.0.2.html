@@ -37,7 +37,7 @@ info:
 
 servers:
   - url: https://api-test-app.orbforhealth.com/v1
-    description: TEST / Development (placeholder – TBC)
+    description: TEST / Development
 security:
   - ApiKeyAuth: []
 
@@ -80,6 +80,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/OrganisationSummary"
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "404":
           description: Governing Body corresponding to given API key not found
           content:
@@ -115,6 +117,8 @@ paths:
               example:
                 errorMessage: One or more fields contain invalid values. Please verify the input data.
                 errorCode: InvalidRequestData
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "404":
           description: No external client found for the provided API key
           content:
@@ -125,7 +129,7 @@ paths:
                 errorMessage: No external client found for the provided API key
                 errorCode: ClientNotFound
         "409":
-          description: Organisation already exists with the same extOrganisationId or organisationName
+          description: Organisation already exists with the same extOrganisationId (`IdNotAvailable`) or organisationName (`NameNotAvailable`)
           content:
             application/json; charset=utf-8:
               schema:
@@ -155,6 +159,14 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateOrganisationRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: Organisation updated
         "400":
@@ -196,6 +208,8 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "404":
           description: Organisation not found
           content:
@@ -218,10 +232,18 @@ paths:
       parameters:
         - $ref: "#/components/parameters/extOrganisationId"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: Organisation deleted (no response body)
         "400":
-          description: Deletion failed due to invalid request or validation error
+          description: Deletion failed due to invalid request or validation error (including `OrgAlreadyArchived` if the organisation was already deleted)
           content:
             application/json; charset=utf-8:
               schema:
@@ -264,7 +286,7 @@ paths:
                     contractSigned: true
                     contractSignedAt: "2026-05-22T10:30:00Z"
         "401":
-          description: Missing or invalid API key
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "403":
           description: EHR API disabled for this client
           content:
@@ -290,21 +312,30 @@ paths:
       operationId: createOrganisationContractAccessToken
       summary: Request Contract Access Token
       description: |
-        Mints a short-lived organisation-scoped token used to open the ORB organisation-contract signing iframe.
+        Generates a short-lived organisation-scoped token used to open the ORB organisation-contract signing iframe.
         Available before the contract is signed (not gated). The token identifies the API-key client and external
-        organisation only (no patient or user claim). See the Widget Integration Guide for iframe embedding and
+        organisation only (no patient or user claim). JWT claims include `clientScopeId`, `extOrganisationId`,
+        and `tokenScope` = `organisation-contract`. See the Widget Integration Guide for iframe embedding and
         postMessage (`SET_TOKEN`, `CONTRACT_SIGNED`).
       parameters:
-        - $ref: "#/components/parameters/extOrganisationId"
+        - name: extOrganisationId
+          in: path
+          required: true
+          description: >
+            External organisation ID (EHR). Must be the same ID used at Create Organisation under this API key;
+            scopes the contract-signing iframe to that organisation
+          schema:
+            type: string
+          example: extOrganisationKey
       responses:
         "200":
           description: Contract access token issued
           content:
             application/json; charset=utf-8:
               schema:
-                $ref: "#/components/schemas/AccessTokenResponse"
+                $ref: "#/components/schemas/ContractAccessTokenResponse"
         "401":
-          description: Missing or invalid API key
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "403":
           description: Organisation suspended, or EHR API disabled for this client
           content:
@@ -330,8 +361,8 @@ paths:
       operationId: setOrganisationBranding
       summary: Set Organisation Branding
       description: |
-        Sets organisation branding used on the patient-facing NHS linking page (Connect Patient by Email / by Link):
-        logo image and/or NHS activation welcome text.
+        Updates the organisation logo and optional welcome title/subtitle shown on the patient-facing NHS linking page
+        (the page patients see when the EHR uses Connect Patient by Email or Connect Patient by Link).
 
         Requires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).
 
@@ -374,6 +405,8 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "403":
           description: Organisation contract not signed, or EHR API disabled
           content:
@@ -391,7 +424,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "415":
           description: |
-            Unsupported media type. Returned when the uploaded file is not PNG, JPEG, JPG, or SVG,
+            Unsupported media type (`UnsupportedMediaType`). Returned when the uploaded file is not PNG, JPEG, JPG, or SVG,
             when the file content does not match its declared type, or when the request is not multipart/form-data.
           content:
             application/json; charset=utf-8:
@@ -432,6 +465,14 @@ paths:
             minimum: 0
             default: 0
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: OK — returns either a plain array (no pagination) or an object with pagination metadata.
           content:
@@ -481,6 +522,14 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateUserRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "201":
           description: User created
         "400":
@@ -496,7 +545,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: User already exists in this organisation with the same extUserId
+          description: User already exists in this organisation with the same extUserId (`IdNotAvailable`), or email already in use (`EmailNotAvailable`)
           content:
             application/json; charset=utf-8:
               schema:
@@ -517,6 +566,14 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateUserRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: User updated
         "400":
@@ -541,6 +598,14 @@ paths:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extUserId"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: User deleted (no response body)
         "404":
@@ -617,7 +682,21 @@ paths:
           description: When true, filter to patients whose surname in ORB mismatches the one in NHS.
           schema:
             type: boolean
+        - name: nhsNumber
+          in: query
+          required: false
+          description: Filter by NHS number from NHS Login in ORB (digits only; spaces/hyphens allowed in the query value)
+          schema:
+            type: string
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: OK — returns either a plain array (no pagination) or an object with pagination metadata.
           content:
@@ -630,7 +709,7 @@ paths:
                     description: Returned when no pagination parameters are provided
                   - $ref: "#/components/schemas/PaginatedPatientsResponse"
         "400":
-          description: Invalid pagination parameters or invalid filter values / combinations
+          description: Invalid pagination parameters (limit > 1000, limit < 1, or offset < 0), or invalid filter value for connectionStatus, dataAccessStatus, patientDataAccessLimited, gpDataAccessLimited, dobMismatch, surnameMismatch, or nhsNumber, or invalid combination of these parameters (for example, patientDataAccessLimited or gpDataAccessLimited cannot be set if connectionStatus is not Connected)
           content:
             application/json; charset=utf-8:
               schema:
@@ -660,7 +739,8 @@ paths:
 
         **Link validity:** NHS registration links expire after a system-configurable period (7 days by default).
         Generating a replacement invalidates the previous registration link and restarts the expiry period.
-        Data-access / consent emails use an authenticated ORB login URL with no separate link expiry.
+        Data-access / consent emails open the ORB login page and do not expire after a fixed number of days
+        (they are not timed invitation tokens); the patient must sign in before reviewing access.
       parameters:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extPatientId"
@@ -671,14 +751,24 @@ paths:
             schema:
               $ref: "#/components/schemas/ConnectPatientByEmailRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
-          description: Invite sent
+          description: >
+            Invite path — connectionStatus is InviteSent (invitation email sent, or already invited and invite flow still applies)
           content:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/PatientConnectionStatus"
         "201":
-          description: Patient already invited. No invite sent unless `resend` flag is true, but data access request is sent when applicable.
+          description: >
+            Patient is Connected (NHS registration complete; a data-access request email may be sent when applicable)
           content:
             application/json; charset=utf-8:
               schema:
@@ -696,7 +786,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Conflict — external patient ID already in use, or DOB/surname mismatch with ORB record
+          description: Conflict — external patient ID already in use by another patient, or request body DOB/surname does not match existing ORB patient record (`PatientDetailsMismatch` when email already exists with different demographics). Distinct from 422 (NHS→ORB mismatch).
           content:
             application/json; charset=utf-8:
               schema:
@@ -709,6 +799,13 @@ paths:
                 $ref: "#/components/schemas/PatientConnectionStatus"
         "429":
           description: Rate limit exceeded — the maximum number of connection emails allowed per patient per organisation in 24 hours has been reached
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorMessage: Rate limit exceeded
+                errorCode: ResendLimitExceeded
 
   /organisations/{extOrganisationId}/patients/{extPatientId}/connection-link:
     post:
@@ -732,7 +829,8 @@ paths:
 
         **Link validity:** NHS registration links expire after a system-configurable period (7 days by default).
         Generating a replacement invalidates the previous registration link and restarts the expiry period.
-        The data-access / consent link is an authenticated ORB login URL with no separate link expiry.
+        The data-access / consent link opens the ORB login page and does not expire after a fixed number of days
+        (it is not a timed invitation token); the patient must sign in before reviewing access.
       parameters:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extPatientId"
@@ -743,14 +841,24 @@ paths:
             schema:
               $ref: "#/components/schemas/ConnectPatientByLinkRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
-          description: Patient was not invited yet, or invitation expired. Links returned.
+          description: >
+            connectionStatus is InviteNotSent or InviteExpired — NHS invitation and/or data-access links returned when applicable
           content:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ConnectPatientByLinkResponse"
         "201":
-          description: Patient already invited. No invite link returned unless `resend` flag is true, but data access request link is returned when applicable.
+          description: >
+            connectionStatus is InviteSent or Connected — no new invite link unless `resend` is true; data-access link returned when applicable
           content:
             application/json; charset=utf-8:
               schema:
@@ -768,7 +876,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Conflict — external patient ID already in use, or DOB/surname mismatch with ORB record
+          description: Conflict — external patient ID already in use by another patient, or request body DOB/surname does not match existing ORB patient record (`PatientDetailsMismatch` when email already exists with different demographics). Distinct from 422 (NHS→ORB mismatch).
           content:
             application/json; charset=utf-8:
               schema:
@@ -781,6 +889,13 @@ paths:
                 $ref: "#/components/schemas/ConnectPatientByLinkResponse"
         "429":
           description: Rate limit exceeded — the maximum number of connection links allowed per patient per organisation in 24 hours has been reached
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                errorMessage: Rate limit exceeded
+                errorCode: ResendLimitExceeded
 
   /organisations/{extOrganisationId}/patients/{extPatientId}/connection:
     get:
@@ -795,6 +910,14 @@ paths:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extPatientId"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: OK
           content:
@@ -826,7 +949,7 @@ paths:
 
         - The EHR connection for this organisation is removed (List Patients / token / connection / status / permissions for this patient and organisation fail).
         - The patient-to-organisation link for that organisation is also removed.
-        - The underlying patient account, PatientLogin, and NHS/IM1 data are retained. Other organisation links are untouched.
+        - The underlying patient account, PatientLogin, and NHS record data are retained. Other organisation links are untouched.
         - If the patient still has other organisations, they can continue to log in and use those.
         - If this was the patient's last organisation, they cannot log in until linked to at least one organisation again; the account and any completed NHS registration are kept.
         - On re-connect, ORB treats them as an existing patient and typically returns a data-access / data-share link rather than a new NHS invitation link.
@@ -834,6 +957,14 @@ paths:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extPatientId"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: Connection removed (no response body)
         "400":
@@ -867,8 +998,9 @@ paths:
         If the patient connection status is `Connected`, this endpoint returns the granted permissions.
         If the connection status is `InviteSent` or `DataMismatch`, this endpoint returns 404.
 
-        This endpoint is informational only — the access token request endpoint will automatically
-        validate permissions before issuing a token.
+        Issuing an access token checks that the patient is Connected and that organisation/patient data access is not limited.
+        It does not check individual dataset grants (e.g. Allergies, Documents); those are enforced inside the widget when NHS
+        record data is fetched. This permissions endpoint is informational for the EHR.
       parameters:
         - $ref: "#/components/parameters/extOrganisationId"
         - $ref: "#/components/parameters/extPatientId"
@@ -899,6 +1031,8 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "403":
           description: Organisation not authorised to view this patient
           content:
@@ -934,6 +1068,14 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdatePatientRequest"
       responses:
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
+        "403":
+          description: Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`)
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: Patient updated — returns current demographic fields stored in ORB after the update
           content:
@@ -988,9 +1130,10 @@ paths:
         - The EHR must make this request server-side (never from the browser).
         - The request must include the `extUserId` of the clinician requesting access.
         - ORB validates that the user exists and belongs to the organisation, the user has `isClinician: true`,
-          the organisation is not suspended, the organisation has access to the patient, and the patient has
-          granted the necessary permissions.
-        - The returned JWT is scoped to the specific user, patient, and organisation.
+          the organisation is not suspended, the organisation has access to the patient, the patient is Connected,
+          and organisation/patient data access is not limited. Individual dataset grants are enforced inside the widget
+          when data is fetched, not at token issue.
+        - The returned JWT is scoped to the specific user, patient, and organisation and includes `clientScopeId`.
         - Token expires in 15 minutes.
         - Requesting an access token is recorded as clinician access for audit purposes.
         - Issuing a token does **not** mean clinician widget T&C are accepted. T&C are enforced inside the
@@ -1018,10 +1161,11 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing API key (empty body). Unknown key typically returns 404 ClientNotFound.
         "403":
           description: |
-            Access denied — user not authorised (including `isClinician: false`, `errorCode`: `NonClinicianAccess`),
-            organisation suspended, or patient permissions insufficient
+            Access denied — `NonClinicianAccess` (`isClinician: false`); `OrgIsSuspended`; `PatientInvalidStatus` (patient not Connected, or patient/GP data access limited); `OrganisationContractNotSigned`; or `ApiDisabled` / `ApiKeyExpired`
           content:
             application/json; charset=utf-8:
               schema:
@@ -1049,6 +1193,9 @@ components:
         API Key issued by ORB. Each key is linked to one External EHR (Governing Body / GovBody).
         A GovBody may contain multiple Organisations.
 
+        If the key is missing, the API returns 401 with an empty body. An unknown key typically
+        returns 404 ClientNotFound. An expired key returns 403 ApiKeyExpired.
+
   parameters:
     extOrganisationId:
       name: extOrganisationId
@@ -1057,7 +1204,7 @@ components:
       description: External organisation ID (EHR)
       schema:
         type: string
-      example: extOrganizationKey
+      example: extOrganisationKey
 
     extUserId:
       name: extUserId
@@ -1118,14 +1265,23 @@ components:
         - InvalidParameter
         - InvalidProperty
         - InvalidRequestData
+        - UnsupportedMediaType
         - IdNotAvailable
         - NameNotAvailable
         - EmailNotAvailable
         - DobMismatch
         - SurnameMismatch
         - PatientInvalidStatus
+        - PatientDetailsMismatch
         - ResendLimitExceeded
+        - NonClinicianAccess
+        - OrgIsSuspended
+        - ApiDisabled
+        - ApiKeyExpired
+        - OrgAlreadyArchived
         - OrganisationContractNotSigned
+        - OrganisationContractAlreadySigned
+        - TermsNotAccepted
         - GenericError
 
     # ── Error ──────────────────────────────────
@@ -1305,15 +1461,15 @@ components:
       properties:
         extOrganisationId:
           type: string
-          description: Echo of path parameter
+          description: External organisation ID (EHR); same value as in the path
         contractSigned:
           type: boolean
-          description: true if the organisation contract has been signed
+          description: true after successful organisation-contract signing; false until then
         contractSignedAt:
           type: string
           format: date-time
           nullable: true
-          description: ISO-8601 timestamp of signing; null if not signed
+          description: UTC ISO-8601 timestamp of signing; present only when contractSigned is true, otherwise null
       required:
         - extOrganisationId
         - contractSigned
@@ -1535,6 +1691,10 @@ components:
           format: date
           nullable: true
           description: Date of oldest NHS record received (ISO-8601); null if none
+        nhsNumber:
+          type: string
+          nullable: true
+          description: NHS number from NHS Login in ORB (read-only; optional; omitted or null if not on record)
         lastInvitationEmailDate:
           type: string
           format: date-time
@@ -1759,6 +1919,24 @@ components:
         expiresIn:
           type: integer
           description: Token expiration time in seconds (typically 900 = 15 minutes)
+          example: 900
+      required:
+        - accessToken
+        - expiresIn
+
+    ContractAccessTokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: >
+            Short-lived JWT for the organisation-contract signing iframe only (not the patient records widget).
+            Pass into the iframe via SET_TOKEN / openOrbWidget (see Widget Integration Guide)
+        expiresIn:
+          type: integer
+          description: >
+            Seconds until the token expires from issue time (configured on ORB; typically 900 = 15 minutes).
+            Generate a new token if the iframe session outlives this value
           example: 900
       required:
         - accessToken

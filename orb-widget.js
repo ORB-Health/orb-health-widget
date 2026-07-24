@@ -18,6 +18,7 @@
             this.titleElement = null;
             this.isOpen = false;
             this.currentPatient = null;
+            this.currentSignatory = this.options.signatory || null;
 
             this.isDragging = false;
             this.dragStartX = 0;
@@ -58,12 +59,17 @@
             container.id = 'orb-widget-container';
             
             const initialPosition = this.getInitialPosition();
-            
+
+            // Contract is a document; the patient view stays phone-shaped.
+            const isContract = String(this.options.baseUrl || '').includes('organisation-contract');
+            const widgetWidth = this.options.width || (isContract ? 560 : 428);
+            const widgetHeight = this.options.height || (isContract ? 860 : 926);
+
             container.style.cssText = `
                 position: fixed;
                 ${initialPosition};
-                width: 428px;
-                height: 926px;
+                width: ${widgetWidth}px;
+                height: ${widgetHeight}px;
                 max-width: calc(100vw - 48px);
                 max-height: calc(100vh - 48px);
                 background: white;
@@ -217,6 +223,13 @@
                         patient: this.currentPatient
                     });
                 }
+
+                if (this.currentSignatory) {
+                    this.sendMessage({
+                        type: 'SET_SIGNATORY',
+                        signatory: this.currentSignatory
+                    });
+                }
             });
         }
 
@@ -229,7 +242,7 @@
                     return `${firstName} ${lastName}`.trim();
                 }
             }
-            return 'NHS Records';
+            return this.options.title || 'NHS Records';
         }
 
         updateTitle() {
@@ -320,6 +333,17 @@
             this.updatePatient(patient);
         }
 
+        setSignatory(signatory) {
+            this.currentSignatory = signatory;
+
+            if (this.iframe && signatory) {
+                this.sendMessage({
+                    type: 'SET_SIGNATORY',
+                    signatory: signatory
+                });
+            }
+        }
+
         refreshToken(newToken) {
             this.options.token = newToken;
             this.sendMessage({ type: 'SET_TOKEN', token: newToken });
@@ -399,18 +423,27 @@
 
                 case 'READY':
                     console.log('Widget iframe ready');
-                    // Re-send token and patient now that the iframe app is ready to receive
+                    // Re-send token, patient and signatory now that the iframe app is ready to receive
                     if (this.options.token) {
                         this.sendMessage({ type: 'SET_TOKEN', token: this.options.token });
                     }
                     if (this.currentPatient) {
                         this.sendMessage({ type: 'SET_PATIENT', patient: this.currentPatient });
                     }
+                    if (this.currentSignatory) {
+                        this.sendMessage({ type: 'SET_SIGNATORY', signatory: this.currentSignatory });
+                    }
                     break;
 
                 case 'REFRESH_TOKEN':
                     window.dispatchEvent(new CustomEvent('orb-widget-token-refresh', {
                         detail: { patient: this.currentPatient }
+                    }));
+                    break;
+
+                case 'CONTRACT_SIGNED':
+                    window.dispatchEvent(new CustomEvent('orb-widget-contract-signed', {
+                        detail: { signedContractUrl: data && data.signedContractUrl }
                     }));
                     break;
 

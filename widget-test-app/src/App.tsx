@@ -10,19 +10,21 @@ import {
 import {
   openOrbWidget,
   attachTokenRefreshListener,
+  attachContractSignedListener,
   decodeJwtPayload,
 } from './widgetIntegration'
-import type { LogEntry, TabName } from './types'
+import type { LogEntry, TabName, OrgContractStatus } from './types'
 import { loadStored, saveStored, usePersistedState } from './storage'
 import { inputStyle, btnStyle } from './styles'
 import {
   Section, Grid2, Label, TabButton,
-  InputWithHistory, LastResponsePanel, LogDetailTabs,
+  InputWithHistory, LastResponsePanel, LogDetailTabs, Spinner,
 } from './ui'
 import { WidgetTab } from './tabs/WidgetTab'
 import { OrgsTab } from './tabs/OrgsTab'
 import { UsersTab } from './tabs/UsersTab'
 import { PatientsTab } from './tabs/PatientsTab'
+import { ContractTab } from './tabs/ContractTab'
 
 // ============================================================================
 // Main
@@ -41,6 +43,7 @@ export default function App() {
   const serverBase = serverUrl.replace(/\/+$/, '').replace(/\/(v1|medical-record-embedded)$/, '')
   const apiBaseUrl = `${serverBase}/v1`
   const widgetBaseUrl = `${serverBase}/medical-record-embedded`
+  const contractWidgetBaseUrl = `${serverBase}/medical-record-embedded/organisation-contract/sign`
 
   const [tab, setTab] = usePersistedState<TabName>('tab', 'widget')
 
@@ -48,6 +51,11 @@ export default function App() {
   const [orgs, setOrgs] = useState<OrgItem[]>([])
   const [users, setUsers] = useState<UserItem[]>([])
   const [patients, setPatients] = useState<PatientItem[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [patientsLoading, setPatientsLoading] = useState(false)
+  // Bump on each load; a response whose id is stale (org changed mid-flight) is dropped.
+  const usersReqRef = useRef(0)
+  const patientsReqRef = useRef(0)
 
   const [selectedOrg, setSelectedOrg] = usePersistedState('selectedOrg', '')
   const [selectedUser, setSelectedUser] = usePersistedState('selectedUser', '')
@@ -62,12 +70,21 @@ export default function App() {
   const widgetRef = useRef<OrbWidget | null>(null)
   const expiryRef = useRef<number | null>(null)
 
+  // -- Contract (org-scoped) widget state ----------------------------------
+  const [contractStatus, setContractStatus] = useState<OrgContractStatus | null>(null)
+  const contractWidgetRef = useRef<OrbWidget | null>(null)
+  const [signatoryFirstName, setSignatoryFirstName] = usePersistedState('signatoryFirstName', '')
+  const [signatoryLastName, setSignatoryLastName] = usePersistedState('signatoryLastName', '')
+  const [signatoryEmail, setSignatoryEmail] = usePersistedState('signatoryEmail', '')
+
   // Widget bakes apiOrigin/widgetBaseUrl in at construction. When either
-  // changes, throw away the cached instance so the next open rebuilds it.
+  // changes, throw away the cached instances so the next open rebuilds them.
   useEffect(() => {
     widgetRef.current?.destroy()
     widgetRef.current = null
-  }, [apiBaseUrl, widgetBaseUrl])
+    contractWidgetRef.current?.destroy()
+    contractWidgetRef.current = null
+  }, [apiBaseUrl, widgetBaseUrl, contractWidgetBaseUrl])
 
   // -- Log -----------------------------------------------------------------
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -171,30 +188,44 @@ export default function App() {
   }, [orb, orbSilent])
 
   const loadUsers = useCallback(async (orgId: string, silent = false) => {
-    if (!orgId) { setUsers([]); return }
+    if (!orgId) { setUsers([]); setUsersLoading(false); return }
+    const reqId = ++usersReqRef.current
     const client = silent ? orbSilent : orb
+    setUsersLoading(true)
     try {
       const { ok, data } = await client.listUsers(orgId)
+      if (reqId !== usersReqRef.current) return  // a newer org selection superseded this
       if (ok && Array.isArray(data)) setUsers(data)
-    } catch (e) { setError(String(e)) }
+    } catch (e) {
+      if (reqId === usersReqRef.current) setError(String(e))
+    } finally {
+      if (reqId === usersReqRef.current) setUsersLoading(false)
+    }
   }, [orb, orbSilent])
 
   const loadPatients = useCallback(async (orgId: string, silent = false) => {
-    if (!orgId) { setPatients([]); return }
+    if (!orgId) { setPatients([]); setPatientsLoading(false); return }
+    const reqId = ++patientsReqRef.current
     const client = silent ? orbSilent : orb
+    setPatientsLoading(true)
     try {
       const { ok, data } = await client.listPatients(orgId)
+      if (reqId !== patientsReqRef.current) return  // a newer org selection superseded this
       if (ok && Array.isArray(data)) setPatients(data)
-    } catch (e) { setError(String(e)) }
+    } catch (e) {
+      if (reqId === patientsReqRef.current) setError(String(e))
+    } finally {
+      if (reqId === patientsReqRef.current) setPatientsLoading(false)
+    }
   }, [orb, orbSilent])
 
   useEffect(() => {
+    // Clear first so the previous org's users/patients never show while the new lists load.
+    setUsers([])
+    setPatients([])
     if (selectedOrg) {
       loadUsers(selectedOrg, true)
       loadPatients(selectedOrg, true)
-    } else {
-      setUsers([])
-      setPatients([])
     }
   }, [selectedOrg, loadUsers, loadPatients])
 
@@ -271,7 +302,7 @@ export default function App() {
             ehr_patient_id: selectedPatient,
             first_name: patient?.firstName || '',
             last_name: patient?.lastName || '',
-            dob: patient?.dateOfBirth || patient?.dob || ''
+            dob: patient?.dateOfBirth || ''
           }
         })
       } else {
@@ -280,7 +311,7 @@ export default function App() {
           ehr_patient_id: selectedPatient,
           first_name: patient?.firstName || '',
           last_name: patient?.lastName || '',
-          dob: patient?.dateOfBirth || patient?.dob || ''
+          dob: patient?.dateOfBirth || ''
         })
       }
       addLog({
@@ -290,6 +321,91 @@ export default function App() {
       })
     } catch (e) { setError(String(e)) }
   }
+
+  // ===================================================================
+  // Organisation contract: status poll + widget open
+  // ===================================================================
+  const checkContractStatus = async () => {
+    setError(null)
+    if (!selectedOrg) {
+      setError('Select an organisation in the Context section first')
+      return
+    }
+    try {
+      const { ok, status, data } = await orb.getOrganisationContractStatus(selectedOrg)
+      if (ok && data) setContractStatus(data)
+      else if (!ok) setError(`Contract status request failed: ${status}`)
+    } catch (e) { setError(String(e)) }
+  }
+
+  // Blank fields mean "send no SET_SIGNATORY", mirroring a host that doesn't support it.
+  const buildSignatory = () => {
+    const first = signatoryFirstName.trim()
+    const last = signatoryLastName.trim()
+    const email = signatoryEmail.trim()
+    if (!first && !last && !email) return null
+    return {
+      first_name: first || undefined,
+      last_name: last || undefined,
+      email: email || undefined,
+    }
+  }
+
+  const openContractWidget = async () => {
+    setError(null)
+    if (!selectedOrg) {
+      setError('Select an organisation in the Context section first')
+      return
+    }
+    try {
+      const { ok, status, data } = await orb.requestContractAccessToken(selectedOrg)
+      if (!ok || !data) {
+        setError(`Contract token request failed: ${status}`)
+        return
+      }
+      setJwt(data.accessToken)
+      setJwtClaims(decodeJwtPayload(data.accessToken))
+      setExpiresIn(data.expiresIn)
+      expiryRef.current = Date.now() + data.expiresIn * 1000
+
+      const apiOrigin = new URL(apiBaseUrl).origin
+      const signatory = buildSignatory()
+
+      if (!contractWidgetRef.current) {
+        contractWidgetRef.current = openOrbWidget({
+          token: data.accessToken,
+          widgetBaseUrl: contractWidgetBaseUrl,
+          apiOrigin,
+          patient: null,
+          signatory,
+          title: 'Organisation Contract',
+        })
+      } else {
+        contractWidgetRef.current.setSignatory(signatory)
+        contractWidgetRef.current.refreshToken(data.accessToken)
+        contractWidgetRef.current.open()
+      }
+      addLog({
+        method: 'WIDGET', path: 'open-contract', status: 200,
+        requestHeaders: {},
+        responseBody: JSON.stringify({ organisation: selectedOrg, signatory }),
+      })
+    } catch (e) { setError(String(e)) }
+  }
+
+  // The contract iframe records the signature itself, then notifies the parent.
+  // Refresh the displayed status when that happens.
+  useEffect(() => {
+    return attachContractSignedListener((url) => {
+      addLog({
+        method: 'WIDGET', path: 'contract-signed', status: 200,
+        requestHeaders: {},
+        responseBody: JSON.stringify({ signedContractUrl: url }),
+      })
+      checkContractStatus()
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orb, selectedOrg, addLog])
 
   // ===================================================================
   // Render
@@ -312,6 +428,8 @@ export default function App() {
           40%  { transform: scale(1.25); }
           100% { transform: scale(1); }
         }
+        @keyframes orb-spin { to { transform: rotate(360deg); } }
+        .orb-spin { animation: orb-spin 0.7s linear infinite; }
         .orb-last-response { animation: orb-flash 900ms ease-out; }
         .orb-log-row       { animation: orb-row-flash 900ms ease-out; }
         .orb-status-pop    { display: inline-block; animation: orb-status-pop 500ms ease-out; transform-origin: center; }
@@ -381,24 +499,30 @@ export default function App() {
             </div>
 
             <Label>User (Clinician)</Label>
-            <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)} style={inputStyle} disabled={!selectedOrg}>
-              <option value="">-- select --</option>
-              {users.map(u => (
-                <option key={u.extUserId} value={u.extUserId}>
-                  {u.firstName} {u.lastName} ({u.extUserId})
-                </option>
-              ))}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)} style={{ ...inputStyle, paddingRight: usersLoading ? 46 : undefined }} disabled={!selectedOrg}>
+                <option value="">-- select --</option>
+                {users.map(u => (
+                  <option key={u.extUserId} value={u.extUserId}>
+                    {u.firstName} {u.lastName} ({u.extUserId})
+                  </option>
+                ))}
+              </select>
+              {usersLoading && <Spinner style={{ position: 'absolute', right: 28, top: '50%', marginTop: -7, pointerEvents: 'none' }} />}
+            </div>
 
             <Label>Patient</Label>
-            <select value={selectedPatient} onChange={e => setSelectedPatient(e.target.value)} style={inputStyle} disabled={!selectedOrg}>
-              <option value="">-- select --</option>
-              {patients.map(p => (
-                <option key={p.extPatientId} value={p.extPatientId}>
-                  {p.firstName} {p.lastName} ({p.extPatientId}){p.connectionStatus ? ` [${p.connectionStatus}]` : ''}
-                </option>
-              ))}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <select value={selectedPatient} onChange={e => setSelectedPatient(e.target.value)} style={{ ...inputStyle, paddingRight: patientsLoading ? 46 : undefined }} disabled={!selectedOrg}>
+                <option value="">-- select --</option>
+                {patients.map(p => (
+                  <option key={p.extPatientId} value={p.extPatientId}>
+                    {p.firstName} {p.lastName} ({p.extPatientId}){p.connectionStatus ? ` [${p.connectionStatus}]` : ''}
+                  </option>
+                ))}
+              </select>
+              {patientsLoading && <Spinner style={{ position: 'absolute', right: 28, top: '50%', marginTop: -7, pointerEvents: 'none' }} />}
+            </div>
           </Grid2>
         </Section>
       )}
@@ -414,6 +538,7 @@ export default function App() {
         <TabButton active={tab === 'orgs'} onClick={() => setTab('orgs')}>Organisations</TabButton>
         <TabButton active={tab === 'users'} onClick={() => setTab('users')}>Users</TabButton>
         <TabButton active={tab === 'patients'} onClick={() => setTab('patients')}>Patients</TabButton>
+        <TabButton active={tab === 'contract'} onClick={() => setTab('contract')}>Contract</TabButton>
       </div>
 
       {tab === 'widget' && (
@@ -451,7 +576,24 @@ export default function App() {
           selectedOrg={selectedOrg}
           selectedUser={selectedUser}
           selectedPatient={selectedPatient}
+          patients={patients}
+          onRefreshPatients={() => loadPatients(selectedOrg)}
           onChanged={() => loadPatients(selectedOrg, true)}
+        />
+      )}
+
+      {tab === 'contract' && (
+        <ContractTab
+          selectedOrg={selectedOrg}
+          contractStatus={contractStatus}
+          signatoryFirstName={signatoryFirstName}
+          signatoryLastName={signatoryLastName}
+          signatoryEmail={signatoryEmail}
+          onSignatoryFirstName={setSignatoryFirstName}
+          onSignatoryLastName={setSignatoryLastName}
+          onSignatoryEmail={setSignatoryEmail}
+          onCheckStatus={checkContractStatus}
+          onOpenContract={openContractWidget}
         />
       )}
 

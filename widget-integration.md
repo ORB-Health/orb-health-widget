@@ -5,6 +5,8 @@
 
 The ORB widget renders a patient's NHS GP records (problems, consultations, medications, allergies, immunisations, investigations, documents) inside a floating window hosted by your web application.
 
+The **same** embed script (`orb-widget.js` / harness `openOrbWidget`) also opens a second ORB page — organisation-contract signing. That is a different URL and token, not a second JS library. See [Organisation contract signing](#organisation-contract-signing).
+
 ### Architecture overview
 
 The integration splits **server-side authorisation** from **client-side presentation**:
@@ -21,8 +23,9 @@ The integration splits **server-side authorisation** from **client-side presenta
 
 | File / endpoint | Purpose |
 | --- | --- |
-| `orb-widget.js` | Embed script (exposes the `window.OrbWidget` class) |
-| `POST .../access-token` | Server-to-server token mint |
+| `orb-widget.js` | Shared embed script (`window.OrbWidget`) for NHS records **and** contract |
+| `POST .../access-token` | Server-to-server JWT for the NHS-records iframe |
+| `POST .../contract-access-token` | Server-to-server JWT for the organisation-contract iframe |
 
 ---
 
@@ -116,7 +119,7 @@ Host-page runtime methods on the returned widget instance (see section 4 for exa
 | `widget.close()` | Closes the window (the message listener remains attached) |
 | `widget.destroy()` | Closes the window and removes the message listener |
 
-**Clinician Terms and Conditions (T&C) gate:** the first time a clinician opens the widget for a given organisation, the iframe routes to a Terms and Conditions screen (tick-box acceptance). Acceptance is recorded **per user per organisation** on ORB. Refusal is not allowed — NHS data stays blocked until accept. T&C wording is hosted on ORB as an editable Static Page. Once accepted for that organisation, subsequent opens go straight to the records. Access-token minting does **not** imply T&C acceptance; the External API has no accept/query endpoints for T&C. Full description: [Terms and Conditions](./specs/Orb%20API%20V1.0.2%20-%2001May2026.md#terms-and-conditions) in the API guide.
+**Clinician Terms and Conditions (T&C) gate:** the first time a clinician opens the widget for a given organisation, the iframe routes to a Terms and Conditions screen (tick-box acceptance). Acceptance is recorded **per user per organisation** on ORB. Refusal is not allowed — NHS data stays blocked until accept. T&C wording is hosted on ORB as an editable Static Page. Once accepted for that organisation, subsequent opens go straight to the records. Access-token minting does **not** imply T&C acceptance; the External API has no accept/query endpoints for T&C. Full description: [Terms and Conditions](./specs/Orb%20API%20V1.0.2%20-%2015July2026.md#terms-and-conditions) in the API guide.
 
 ---
 
@@ -148,9 +151,9 @@ Response (200):
 - `expiresIn` is in seconds; the default is 15 minutes.
 - **`/access-token` must never be called from the browser.** The API key must remain server-side. The harness calls it client-side only because it is a development tool.
 - Common error responses:
-  - `403` if the organisation is suspended, the patient is not Connected, the patient or organisation has data access limited, or the API key is expired or disabled.
+  - `403` if the organisation contract is not signed (`OrganisationContractNotSigned`), the user is non-clinical (`NonClinicianAccess`), the organisation is suspended, the patient is not Connected, the patient or organisation has data access limited, or the API key is expired or disabled.
   - `404` if any of organisation, user or patient is unknown.
-- For the full list of endpoints, request and response bodies, status codes and error shapes, see the ORB API spec supplied alongside this guide (`Orb API V1.0.2.md` / `ORB API V1.0.2.html`).
+- For the full list of endpoints, request and response bodies, status codes and error shapes, see the ORB External API guide (`Orb API V1.0.2 - 15July2026.md` / `ORB API V1.0.2.html`).
 
 ### 4.2 Client side: loading orb-widget.js
 
@@ -285,6 +288,8 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 
 ### 403 from /access-token
 
+- Organisation contract is not signed (`errorCode`: `OrganisationContractNotSigned`). Complete the [organisation contract](#organisation-contract-signing) flow first.
+- User has `isClinician: false` (`errorCode`: `NonClinicianAccess`).
 - Patient is not Connected (status `InviteNotSent` / `InviteSent` / `InviteExpired` / `DataMismatch`). Issue an invite first, either from the test harness **Patients** tab or via the `connection-email` / `connection-link` endpoints (see the ORB API spec referenced in section 4.1).
 - Patient has data access limited (`gpDataAccessLimited` or `patientDataAccessLimited`).
 - Organisation is suspended.
@@ -303,11 +308,13 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 
 ```ts
 {
-  token:     string         // JWT from /access-token (required)
-  baseUrl:   string         // <widgetBaseUrl>?apiBase=<apiOrigin> (required)
-  position?: string         // 'bottom-right' (default), top-left, etc.
-  draggable?: boolean       // default true
-  target?:   HTMLElement    // default document.body
+  token:      string         // JWT from /access-token or /contract-access-token (required)
+  baseUrl:    string         // <widgetBaseUrl>?apiBase=<apiOrigin> (required) — URL selects the screen
+  title?:     string         // floating-window header (default "NHS Records")
+  position?:  string         // 'bottom-right' (default), top-left, etc.
+  draggable?: boolean        // default true
+  target?:    HTMLElement    // default document.body
+  signatory?: object | null  // contract only; see SET_SIGNATORY
 }
 ```
 
@@ -320,6 +327,7 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 | `setPatient(patient)` | Change patient (open or closed) |
 | `refreshToken(newToken)` | Provide a new JWT to the running iframe |
 | `setToken(newToken)` | Store a new JWT for the next open (no live push) |
+| `setSignatory(signatory)` | Contract iframe only: pre-fill / update signatory via `SET_SIGNATORY` |
 | `destroy()` | Close and remove the window message listener |
 
 ### Patient object
@@ -368,16 +376,37 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 
 ## Organisation contract signing
 
-A separate, organisation-level flow (no patient) reusing the same widget JWT mechanism:
+A **separate** organisation-level iframe (not the clinician patient-records widget). The ORB page is `/medical-record-embedded/organisation-contract/sign`. Use the **same** `orb-widget.js` / `openOrbWidget` as for NHS records — only the URL and token change (`contract-access-token`, no patient). `orb-widget.js` hosts the iframe shell and passes `postMessage`; it is not a second NHS-records feature.
 
-1. Host mints an **organisation-scoped** contract token (no patient/user claim):
+**Kickoff** (same pattern as §4.3; matches harness `openContractWidget` in `App.tsx`):
+
+```js
+const widgetBaseUrl = 'https://apitest-api.orbforhealth.com/medical-record-embedded/organisation-contract/sign';
+const apiOrigin     = 'https://apitest-api.orbforhealth.com';
+const iframeUrl     = `${widgetBaseUrl}?apiBase=${encodeURIComponent(apiOrigin)}`;
+
+// accessToken from POST .../organisations/{org}/contract-access-token (server-side)
+const widget = new OrbWidget({
+    token: accessToken,
+    baseUrl: iframeUrl,
+    title: 'Organisation Contract',
+    signatory: { first_name: 'Alex', last_name: 'Signer', email: 'alex@clinic.example' },
+});
+widget.open(); // no patient — org-scoped; sends SET_TOKEN then SET_SIGNATORY
+```
+
+Or via the harness helper: `openOrbWidget({ token, widgetBaseUrl, apiOrigin, patient: null, signatory, title: 'Organisation Contract' })`.
+
+Flow:
+
+1. Host generates an **organisation-scoped** contract token:
    `POST /v1/organisations/{extOrganisationId}/contract-access-token` (X-API-KEY) -> `{ accessToken, expiresIn }`.
-2. Host opens the contract iframe at `/medical-record-embedded/organisation-contract/sign` and pushes the token via `SET_TOKEN` (same as the records widget; no `SET_PATIENT` needed), optionally followed by `SET_SIGNATORY` with `{ first_name, last_name, email }` (the `signatory` option of `openOrbWidget` / `OrbWidget.setSignatory`). The widget renders these into the displayed contract text and pre-fills the signature form; the organisation name always comes from ORB's own records. The values are display-only - the signatory can still edit the form, and ORB records whatever is submitted. Without `SET_SIGNATORY` the contract renders with blank signatory placeholders.
-3. Inside the iframe the signatory reviews the contract, enters full name + email (pre-filled when `SET_SIGNATORY` was sent), ticks acceptance, and submits. Acceptance is handled by ORB inside the widget — the host does not call a separate accept API.
+2. Host opens the contract iframe as above and pushes the token via `SET_TOKEN` (optionally `SET_SIGNATORY` with `{ first_name, last_name, email }`). The widget renders these into the displayed contract text and pre-fills the signature form; the organisation name always comes from ORB's own records. The values are display-only - the signatory can still edit the form, and ORB records whatever is submitted. Without `SET_SIGNATORY` the contract renders with blank signatory placeholders.
+3. Inside the iframe the signatory reviews the contract, enters full name + email (pre-filled when `SET_SIGNATORY` was sent), ticks acceptance, and submits. Acceptance is handled by ORB inside the contract iframe — the host does not call a separate accept API.
 4. On success the iframe posts `CONTRACT_SIGNED` (re-dispatched by `orb-widget.js` as the `orb-widget-contract-signed` DOM event) and shows a "Download Signed Contract" button plus a note that the signed copy has been emailed to the signatory.
 5. Host can poll `GET /v1/organisations/{extOrganisationId}/contract-status` (X-API-KEY) -> `{ extOrganisationId, contractSigned, contractSignedAt }`.
 
-Until the contract is signed, protected EHR API and widget endpoints return **403** `{ "errorCode": "OrganisationContractNotSigned", ... }`. See the External API guide [Organisation contract (clinic)](specs/Orb%20API%20V1.0.2%20-%2001May2026.md#organisation-contract-clinic) for the allowed-before / blocked-until tables. The host (not ORB) decides which user sees the signing UI; ORB does not re-check `authorisedSignatory` on accept.
+Until the contract is signed, clinician access to patient NHS data and most External API operations are blocked (**403** `{ "errorCode": "OrganisationContractNotSigned", ... }`). See the External API guide [Organisation contract (clinic)](specs/Orb%20API%20V1.0.2%20-%2023July2026.md#organisation-contract-clinic) for the allowed-before / blocked-until tables. The host (not ORB) decides which user sees the signing UI; ORB does not re-check `authorisedSignatory` on accept.
 
 ---
 
@@ -387,9 +416,9 @@ Canonical files in the harness (`tools/widget-test-app`):
 
 | File | Description |
 | --- | --- |
-| `public/orb-widget.js` | The embed script (~430 lines) |
-| `src/widgetIntegration.ts` | Typed wrapper around `OrbWidget` with the `attachTokenRefreshListener` function; a JSDoc minimal example sits at the top of the file |
-| `src/orbApi.ts` | Every ORB API endpoint, typed; see `requestAccessToken()` |
-| `src/App.tsx` | End-to-end integration (token request, widget open, logging); see `viewNhsRecords` |
+| `public/orb-widget.js` | The embed script (~470 lines) — used for both screens |
+| `src/widgetIntegration.ts` | Typed wrapper (`openOrbWidget`, token-refresh / contract-signed listeners) |
+| `src/orbApi.ts` | Every ORB API endpoint, typed; see `requestAccessToken()` / `requestContractAccessToken()` |
+| `src/App.tsx` | End-to-end: `viewNhsRecords` (NHS records) and `openContractWidget` (contract) |
 
 ---

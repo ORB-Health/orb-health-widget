@@ -47,13 +47,10 @@ export interface OrgRandom {
   id: string; name: string; address1: string; address2: string
   address3: string; address4: string
   postcode: string; phoneNumber: string; cqc: string
-  signatoryName: string; signatoryEmail: string
 }
 export function randomOrgData(): OrgRandom {
   const prefix = pick(ORG_PREFIXES)
   const suffix = pick(ORG_SUFFIXES)
-  const signFirst = pick([...FIRST_NAMES_M, ...FIRST_NAMES_F])
-  const signLast = pick(LAST_NAMES)
   return {
     id: `ORG-${shortId()}`,
     name: `${prefix} ${suffix}`,
@@ -63,9 +60,7 @@ export function randomOrgData(): OrgRandom {
     address4: '',
     postcode: randomPostcode(),
     phoneNumber: randomPhone(),
-    cqc: randomCqcNumber(),
-    signatoryName: `${signFirst} ${signLast}`,
-    signatoryEmail: randomEmail(signFirst, signLast)
+    cqc: randomCqcNumber()
   }
 }
 
