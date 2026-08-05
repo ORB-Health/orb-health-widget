@@ -193,9 +193,13 @@ export default function App() {
     const client = silent ? orbSilent : orb
     setUsersLoading(true)
     try {
-      const { ok, data } = await client.listUsers(orgId)
+      const { ok, status, data } = await client.listUsers(orgId)
       if (reqId !== usersReqRef.current) return  // a newer org selection superseded this
       if (ok && Array.isArray(data)) setUsers(data)
+      else if (!ok) {
+        const errorBody = data as { errorCode?: string; errorMessage?: string } | null
+        setError(errorBody?.errorMessage || `Failed to load users: ${status}`)
+      }
     } catch (e) {
       if (reqId === usersReqRef.current) setError(String(e))
     } finally {
@@ -209,9 +213,13 @@ export default function App() {
     const client = silent ? orbSilent : orb
     setPatientsLoading(true)
     try {
-      const { ok, data } = await client.listPatients(orgId)
+      const { ok, status, data } = await client.listPatients(orgId)
       if (reqId !== patientsReqRef.current) return  // a newer org selection superseded this
       if (ok && Array.isArray(data)) setPatients(data)
+      else if (!ok) {
+        const errorBody = data as { errorCode?: string; errorMessage?: string } | null
+        setError(errorBody?.errorMessage || `Failed to load patients: ${status}`)
+      }
     } catch (e) {
       if (reqId === patientsReqRef.current) setError(String(e))
     } finally {
@@ -282,7 +290,11 @@ export default function App() {
     try {
       const { ok, status, data } = await orb.requestAccessToken(selectedOrg, selectedPatient, selectedUser)
       if (!ok || !data) {
-        setError(`Token request failed: ${status}`)
+        const errorBody = data as { errorMessage?: string; errorCode?: string } | null
+        setError(
+          errorBody?.errorMessage
+            || `Token request failed: ${status}`
+        )
         return
       }
       setJwt(data.accessToken)

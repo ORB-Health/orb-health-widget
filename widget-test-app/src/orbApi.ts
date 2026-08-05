@@ -170,9 +170,13 @@ export interface UpdateOrganisationRequest {
   autoDeleteDays?: number
 }
 
-/** Branding multipart body. Omit `file` to clear the existing logo. */
+/**
+ * Branding multipart body. The logo is only touched when `overwriteLogo` is
+ * true: with a `file` it is set/replaced, without one it is removed.
+ */
 export interface SetOrganisationBrandingRequest {
   file?: File
+  overwriteLogo?: boolean
   patientNHSActivationWelcomeTitle?: string
   patientNHSActivationWelcomeSubtitle?: string
 }
@@ -417,9 +421,11 @@ export function createOrbApi(config: OrbApiConfig) {
     /**
      * POST /organisations/{id}/branding - multipart upload.
      *
-     * Send a `file` to set / replace the logo (PNG / JPEG / JPG / SVG, <=1MB);
-     * omit `file` (send an empty multipart body) to remove the existing logo.
-     * The two welcome-text fields are optional and only updated when included.
+     * The logo is only changed when `overwriteLogo=true` is sent: with a
+     * `file` (PNG / JPEG / JPG / SVG, <=1MB) it is set / replaced, without
+     * one the existing logo is removed. Without the flag the logo is left
+     * untouched. The two welcome-text fields are optional and only updated
+     * when included.
      */
     setOrganisationBranding: (
       extOrganisationId: string,
@@ -427,6 +433,7 @@ export function createOrbApi(config: OrbApiConfig) {
     ) => {
       const form = new FormData()
       if (data.file) form.append('file', data.file, data.file.name)
+      if (data.overwriteLogo !== undefined) form.append('overwriteLogo', String(data.overwriteLogo))
       if (data.patientNHSActivationWelcomeTitle !== undefined)
         form.append('patientNHSActivationWelcomeTitle', data.patientNHSActivationWelcomeTitle)
       if (data.patientNHSActivationWelcomeSubtitle !== undefined)

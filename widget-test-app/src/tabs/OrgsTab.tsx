@@ -277,6 +277,7 @@ function OrgBrandingForm(props: { orb: OrbApi; orgs: OrgItem[] }) {
     if (!target) return
     await props.orb.setOrganisationBranding(target, {
       file: file ?? undefined,
+      ...(file ? { overwriteLogo: true } : {}),
       ...(welcomeTitle ? { patientNHSActivationWelcomeTitle: welcomeTitle } : {}),
       ...(welcomeSubtitle ? { patientNHSActivationWelcomeSubtitle: welcomeSubtitle } : {}),
     })
@@ -284,8 +285,8 @@ function OrgBrandingForm(props: { orb: OrbApi; orgs: OrgItem[] }) {
 
   const removeLogo = async () => {
     if (!target) return
-    if (!confirm(`Remove the existing logo for ${target}? An empty multipart body is posted.`)) return
-    await props.orb.setOrganisationBranding(target, {})
+    if (!confirm(`Remove the existing logo for ${target}? overwriteLogo=true is posted with no file.`)) return
+    await props.orb.setOrganisationBranding(target, { overwriteLogo: true })
     clear()
   }
 
@@ -293,9 +294,10 @@ function OrgBrandingForm(props: { orb: OrbApi; orgs: OrgItem[] }) {
     <Section title="Set Organisation Branding">
       <Hint>
         <code>POST /organisations/{'{id}'}/branding</code> is multipart/form-data.
-        Send a <b>file</b> (PNG / JPEG / JPG / SVG, max 1MB) to set or replace the logo.
-        Send an empty body (no file, no text) to remove the logo. The welcome-text fields
-        are optional and only updated when included.
+        The logo is only changed when <b>overwriteLogo=true</b> is sent: with a{' '}
+        <b>file</b> (PNG / JPEG / JPG / SVG, max 1MB) it is set or replaced, without
+        one the existing logo is removed. The welcome-text fields are optional and
+        only updated when included.
       </Hint>
       <Grid2>
         <Label>Target organisation</Label>
