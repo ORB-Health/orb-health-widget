@@ -25,6 +25,7 @@ import { OrgsTab } from './tabs/OrgsTab'
 import { UsersTab } from './tabs/UsersTab'
 import { PatientsTab } from './tabs/PatientsTab'
 import { ContractTab } from './tabs/ContractTab'
+import { StatsTab } from './tabs/StatsTab'
 
 // ============================================================================
 // Main
@@ -551,6 +552,7 @@ export default function App() {
         <TabButton active={tab === 'users'} onClick={() => setTab('users')}>Users</TabButton>
         <TabButton active={tab === 'patients'} onClick={() => setTab('patients')}>Patients</TabButton>
         <TabButton active={tab === 'contract'} onClick={() => setTab('contract')}>Contract</TabButton>
+        <TabButton active={tab === 'stats'} onClick={() => setTab('stats')}>Stats</TabButton>
       </div>
 
       {tab === 'widget' && (
@@ -591,6 +593,14 @@ export default function App() {
           patients={patients}
           onRefreshPatients={() => loadPatients(selectedOrg)}
           onChanged={() => loadPatients(selectedOrg, true)}
+        />
+      )}
+
+      {tab === 'stats' && (
+        <StatsTab
+          orb={orb}
+          orgs={orgs}
+          onRefreshOrgs={() => loadOrgs()}
         />
       )}
 

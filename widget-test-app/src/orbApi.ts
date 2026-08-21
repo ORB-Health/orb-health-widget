@@ -140,6 +140,81 @@ export interface AccessTokenResponse {
 }
 
 // ============================================================================
+// Stats (GET /stats/*) - all endpoints return one row per organisation the
+// API key can see, optionally narrowed to a single org. Note the mixed
+// spelling: the server returns `organizationName` (z) next to
+// `extOrganisationKey` (s), and the query parameter is `extOrganizationKey`.
+// ============================================================================
+
+/** Mirrors LinksSentResponse. */
+export interface LinksSentStats {
+  organizationName: string
+  extOrganisationKey: string
+  invitationsSent: number
+  dataAccessRequestsSent: number
+}
+
+/** Mirrors ConsentGrantedResponse. */
+export interface ConsentGrantedStats {
+  organizationName: string
+  extOrganisationKey: string
+  consentGranted: number
+  dataAccessRequestsSent: number
+}
+
+/** Mirrors ConsentDeclinedResponse. */
+export interface ConsentDeclinedStats {
+  organizationName: string
+  extOrganisationKey: string
+  invitationsSent: number
+  declinedInvitations: number
+  dataAccessRequestsSent: number
+  dataAccessRequestsDeclined: number
+}
+
+/** Mirrors NoResponseResponse. */
+export interface NoResponseStats {
+  organizationName: string
+  extOrganisationKey: string
+  invitationsSent: number
+  noResponseInvitations: number
+  dataAccessRequestsSent: number
+  noResponseDataAccessRequests: number
+}
+
+/** Mirrors WidgetTermsResponse. Snapshot of current state; archived users excluded. */
+export interface WidgetTermsStats {
+  organizationName: string
+  extOrganisationKey: string
+  signed: number
+  notSigned: number
+  clinicianSigned: number
+  clinicianNotSigned: number
+  locumSigned: number
+  locumNotSigned: number
+}
+
+/** Mirrors NhsRecordsViewedUserResponse. */
+export interface NhsRecordsViewedUserStats {
+  extUserId: string
+  userName: string
+  isClinician: boolean
+  isLocum: boolean
+  patientsViewed: number
+}
+
+/**
+ * Mirrors NhsRecordsViewedResponse. The org-level patientsViewed is distinct
+ * patients for the practice, not the sum of the per-user counts.
+ */
+export interface NhsRecordsViewedStats {
+  organizationName: string
+  extOrganisationKey: string
+  patientsViewed: number
+  users: NhsRecordsViewedUserStats[]
+}
+
+// ============================================================================
 // Request types
 // ============================================================================
 
@@ -247,6 +322,18 @@ export interface ListPatientsQuery {
   offset?: number
 }
 
+export interface StatsQuery {
+  /** Server-side spelling uses a 'z'. Omit to get every org the key can see. */
+  extOrganizationKey?: string
+  /**
+   * YYYY-MM-DD or full ISO date-time. When either date is set, counts are
+   * derived from the per-link send history instead of the patients' last
+   * email dates. 400 if fromDate > toDate. Not supported by widget-terms.
+   */
+  fromDate?: string
+  toDate?: string
+}
+
 // ============================================================================
 // Client factory
 // ============================================================================
@@ -282,6 +369,15 @@ export interface OrbApiConfig {
 }
 
 export type OrbApi = ReturnType<typeof createOrbApi>
+
+function statsQueryString(query?: StatsQuery): string {
+  const params = new URLSearchParams()
+  if (query?.extOrganizationKey) params.append('extOrganizationKey', query.extOrganizationKey)
+  if (query?.fromDate) params.append('fromDate', query.fromDate)
+  if (query?.toDate) params.append('toDate', query.toDate)
+  const qs = params.toString()
+  return qs ? '?' + qs : ''
+}
 
 export function createOrbApi(config: OrbApiConfig) {
   const base = config.baseUrl.replace(/\/+$/, '')
@@ -658,6 +754,41 @@ export function createOrbApi(config: OrbApiConfig) {
         `/organisations/${extOrganisationId}/patients/${extPatientId}/access-token`,
         { extUserId }
       ),
+
+    // ------------------------------------------------------------------
+    // Stats (org-level statistics, one row per organisation)
+    // ------------------------------------------------------------------
+
+    /** GET /stats/links-sent - invitation / data-access-request emails sent. */
+    getLinksSentStats: (query?: StatsQuery) =>
+      request<LinksSentStats[]>('GET', `/stats/links-sent${statsQueryString(query)}`),
+
+    /** GET /stats/consent-granted - patients who granted any IM1 category. */
+    getConsentGrantedStats: (query?: StatsQuery) =>
+      request<ConsentGrantedStats[]>('GET', `/stats/consent-granted${statsQueryString(query)}`),
+
+    /** GET /stats/consent-declined - declined invitations / data-access requests. */
+    getConsentDeclinedStats: (query?: StatsQuery) =>
+      request<ConsentDeclinedStats[]>('GET', `/stats/consent-declined${statsQueryString(query)}`),
+
+    /** GET /stats/no-response - sent but neither accepted nor declined. */
+    getNoResponseStats: (query?: StatsQuery) =>
+      request<NoResponseStats[]>('GET', `/stats/no-response${statsQueryString(query)}`),
+
+    /**
+     * GET /stats/widget-terms - widget T&Cs signed / not signed per org,
+     * split by clinician / locum (independent flags, so a locum clinician
+     * counts in both). Snapshot only - no date range.
+     */
+    getWidgetTermsStats: (extOrganizationKey?: string) =>
+      request<WidgetTermsStats[]>('GET', `/stats/widget-terms${statsQueryString({ extOrganizationKey })}`),
+
+    /**
+     * GET /stats/nhs-records-viewed - distinct patients viewed via the IM1
+     * widget, per org and per (non-archived) user, including users with 0.
+     */
+    getNhsRecordsViewedStats: (query?: StatsQuery) =>
+      request<NhsRecordsViewedStats[]>('GET', `/stats/nhs-records-viewed${statsQueryString(query)}`),
 
     // ------------------------------------------------------------------
     // Escape hatch: raw call for experimentation / unlisted endpoints.

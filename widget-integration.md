@@ -19,6 +19,8 @@ The integration splits **server-side authorisation** from **client-side presenta
 
 **Security boundary:** Only the JWT reaches the browser; the **API key never does**. The token is scoped to one organisation, one clinician, and one patient. When it nears expiry, the widget requests a replacement from your back-end (section 5).
 
+**Audit:** Display of NHS records in the widget is retained by ORB for compliance (viewer, organisation, time, and content shown, including documents and unsuccessful retrievals). Individual visits are not queryable via the External API. Aggregated clinician view counts are available from `GET /v1/stats/nhs-records-viewed`. Widget T&C acceptance counts are available from `GET /v1/stats/widget-terms`. See the External API guide ([NHS records viewing audit](./specs/Orb%20API%20V1.0.3%20-%2003August2026.md#nhs-records-viewing-audit) and [Stats](./specs/Orb%20API%20V1.0.3%20-%2003August2026.md#stats)).
+
 **Components in scope:**
 
 | File / endpoint | Purpose |
@@ -83,8 +85,8 @@ When **View NHS Records** is clicked, the harness:
 1. POSTs to `/v1/organisations/{orgId}/patients/{patientId}/access-token` with body `{ "extUserId": "<userId>" }` and header `X-API-KEY`.
 2. Receives `{ accessToken, expiresIn }`.
 3. Calls `openOrbWidget({ token, widgetBaseUrl, apiOrigin, patient })`, which:
-   - Builds the iframe URL: `{widgetBaseUrl}?apiBase={apiOrigin}&parentOrigin={your origin}`
-   - Creates the floating window and iframe.
+   - Builds the iframe base URL with a URL-encoded `apiBase` query parameter (see §4.3).
+   - Creates the floating window; `orb-widget.js` also appends `parentOrigin` automatically.
    - Sends `postMessage({ type: 'SET_TOKEN', token })` once the iframe loads.
    - Sends `postMessage({ type: 'SET_PATIENT', patient })` to set the patient context.
 
@@ -183,6 +185,7 @@ const { accessToken } = await fetch('/your-backend/orb-token', {
 // 2) Build the iframe URL, specifying the ORB API origin.
 const widgetBaseUrl = 'https://apitest-api.orbforhealth.com/medical-record-embedded';
 const apiOrigin     = 'https://apitest-api.orbforhealth.com';
+// apiBase MUST be URL-encoded. orb-widget.js then appends parentOrigin automatically.
 const iframeUrl     = `${widgetBaseUrl}?apiBase=${encodeURIComponent(apiOrigin)}`;
 
 // 3) Construct the widget.
@@ -201,6 +204,15 @@ widget.open({
     dob:            '1980-04-12', // optional, used for display
 });
 ```
+
+**Iframe URL query parameters**
+
+| Parameter | Who sets it | Purpose |
+| --- | --- | --- |
+| `apiBase` | Host (required) | ORB API origin used by the iframe for NHS / widget API calls. Must be **URL-encoded** (`encodeURIComponent`). Without encoding the iframe may fail to resolve the API host. |
+| `parentOrigin` | `orb-widget.js` (automatic) | Host page origin so the iframe can `postMessage` back safely. If you embed without `orb-widget.js`, append `parentOrigin={window.location.origin}` yourself (also URL-encoded). |
+
+`widgetBaseUrl` selects the screen (`/medical-record-embedded` for NHS records, or `.../organisation-contract/sign` for contract). `apiOrigin` must be the ORB API host — not the host EHR page origin.
 
 This completes the client integration.
 
@@ -317,7 +329,7 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 ```ts
 {
   token:      string         // JWT from /access-token or /contract-access-token (required)
-  baseUrl:    string         // <widgetBaseUrl>?apiBase=<apiOrigin> (required) — URL selects the screen
+  baseUrl:    string         // <widgetBaseUrl>?apiBase=<URL-encoded apiOrigin> (required) — URL selects the screen; orb-widget.js appends parentOrigin
   title?:     string         // floating-window header (default "NHS Records")
   position?:  string         // 'bottom-right' (default), top-left, etc.
   draggable?: boolean        // default true
@@ -377,7 +389,7 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 'orb-widget-token-refresh'
     event.detail.patient = the last patient supplied
 'orb-widget-contract-signed'
-    event.detail.signedContractUrl = link to the signed contract PDF
+    event.detail.signedContractUrl = login-free shared link to the signed contract PDF
 ```
 
 ---
@@ -411,8 +423,10 @@ Flow:
    `POST /v1/organisations/{extOrganisationId}/contract-access-token` (X-API-KEY) -> `{ accessToken, expiresIn }`.
 2. Host opens the contract iframe as above and pushes the token via `SET_TOKEN` (optionally `SET_SIGNATORY` with `{ first_name, last_name, email }`). The widget renders these into the displayed contract text and pre-fills the signature form; the organisation name always comes from ORB's own records. The values are display-only - the signatory can still edit the form, and ORB records whatever is submitted. Without `SET_SIGNATORY` the contract renders with blank signatory placeholders.
 3. Inside the iframe the signatory reviews the contract, enters full name + email (pre-filled when `SET_SIGNATORY` was sent), ticks acceptance, and submits. Acceptance is handled by ORB inside the contract iframe — the host does not call a separate accept API.
-4. On success the iframe posts `CONTRACT_SIGNED` (re-dispatched by `orb-widget.js` as the `orb-widget-contract-signed` DOM event) and shows a "Download Signed Contract" button plus a note that the signed copy has been emailed to the signatory.
+4. On success the iframe posts `CONTRACT_SIGNED` (re-dispatched by `orb-widget.js` as the `orb-widget-contract-signed` DOM event) with `{ signedContractUrl }`. That URL is a **login-free shared link** to the signed PDF stored by ORB. The iframe also shows a **Download Signed Contract** button; the same PDF is emailed to the signatory.
 5. Host can poll `GET /v1/organisations/{extOrganisationId}/contract-status` (X-API-KEY) -> `{ extOrganisationId, contractSigned, contractSignedAt }`.
+
+**Re-signing:** one signature per organisation is enough. Once `contractSigned` is `true`, a further accept attempt inside the contract iframe returns **409** with `errorCode` **OrganisationContractAlreadySigned**. Do not re-open the signing UI after a successful sign; use `contract-status` instead.
 
 Until the contract is signed, clinician access to patient NHS data and most External API operations are blocked (**403** `{ "errorCode": "OrganisationContractNotSigned", ... }`). See the External API guide [Organisation contract (clinic)](specs/Orb%20API%20V1.0.3%20-%2003August2026.md#organisation-contract-clinic) for the allowed-before / blocked-until tables. The host (not ORB) decides which user sees the signing UI; ORB does not re-check `authorisedSignatory` on accept.
 
