@@ -19,7 +19,7 @@ The integration splits **server-side authorisation** from **client-side presenta
 
 **Security boundary:** Only the JWT reaches the browser; the **API key never does**. The token is scoped to one organisation, one clinician, and one patient. When it nears expiry, the widget requests a replacement from your back-end (section 5).
 
-**Audit:** Display of NHS records in the widget is retained by ORB for compliance (viewer, organisation, time, and content shown, including documents and unsuccessful retrievals). Individual visits are not queryable via the External API. Aggregated clinician view counts are available from `GET /v1/stats/nhs-records-viewed`. Widget T&C acceptance counts are available from `GET /v1/stats/widget-terms`. See the External API guide ([NHS records viewing audit](./specs/Orb%20API%20V1.0.3%20-%2003August2026.md#nhs-records-viewing-audit) and [Stats](./specs/Orb%20API%20V1.0.3%20-%2003August2026.md#stats)).
+**Audit:** Display of NHS records in the widget is retained by ORB for compliance (viewer, organisation, time, and content shown, including documents and unsuccessful retrievals). Individual visits are not queryable via the External API. Aggregated clinician view counts are available from `GET /v1/stats/nhs-records-viewed`. Widget T&C acceptance counts are available from `GET /v1/stats/widget-terms`. See the External API guide ([NHS records viewing audit](./specs/Orb%20API%20V1.0.4%20-%2020August2026.md#nhs-records-viewing-audit) and [Stats](./specs/Orb%20API%20V1.0.4%20-%2020August2026.md#stats)).
 
 **Components in scope:**
 
@@ -121,7 +121,7 @@ Host-page runtime methods on the returned widget instance (see section 4 for exa
 | `widget.close()` | Closes the window (the message listener remains attached) |
 | `widget.destroy()` | Closes the window and removes the message listener |
 
-**Clinician Terms and Conditions (T&C) gate:** the first time a clinician opens the widget for a given organisation, the iframe routes to a Terms and Conditions screen (tick-box acceptance). Acceptance is recorded **per user per organisation** on ORB. Refusal is not allowed — NHS data stays blocked until accept. T&C wording is hosted on ORB as an editable Static Page. Once accepted for that organisation, subsequent opens go straight to the records. Access-token minting does **not** imply T&C acceptance; the External API has no accept/query endpoints for T&C. Full description: [Terms and Conditions](./specs/Orb%20API%20V1.0.3%20-%2003August2026.md#terms-and-conditions) in the API guide.
+**Clinician Terms and Conditions (T&C) gate:** the first time a clinician opens the widget for a given organisation, the iframe routes to a Terms and Conditions screen (tick-box acceptance). Acceptance is recorded **per user per organisation** on ORB. Refusal is not allowed — NHS data stays blocked until accept. T&C wording is hosted on ORB as an editable Static Page. Once accepted for that organisation, subsequent opens go straight to the records. Access-token minting does **not** imply T&C acceptance; the External API has no accept/query endpoints for T&C. Full description: [Terms and Conditions](./specs/Orb%20API%20V1.0.4%20-%2020August2026.md#terms-and-conditions) in the API guide.
 
 **NHS module gate:** if the organisation’s NHS module is disabled in ORB, the same clinician patient-records widget iframe shows an ORB-hosted unavailable / warning screen instead of NHS records (message along the lines of access currently disabled — contact the organisation administrator). No extra EHR embed work is required — use the same iframe and access-token flow. Enabling the module is an ORB organisation setting; until then NHS data stays unavailable in the widget. Access-token minting does **not** fail solely because the NHS module is off; this gate is enforced **inside the widget**, not as a `/access-token` `errorCode`.
 
@@ -157,7 +157,7 @@ Response (200):
 - Common error responses:
   - `403` if the organisation contract is not signed (`OrganisationContractNotSigned`), the user is non-clinical (`NonClinicianAccess`), the organisation is suspended, the patient is not Connected, the patient or organisation has data access limited, or the API key is expired or disabled.
   - `404` if any of organisation, user or patient is unknown.
-- For the full list of endpoints, request and response bodies, status codes and error shapes, see the ORB External API guide (`Orb API V1.0.3 - 03August2026.md` / `ORB API V1.0.3.html`).
+- For the full list of endpoints, request and response bodies, status codes and error shapes, see the ORB External API guide (`Orb API V1.0.4 - 20August2026.md` / `ORB API V1.0.4.html`).
 
 ### 4.2 Client side: loading orb-widget.js
 
@@ -315,6 +315,10 @@ Reading the patient from `event.detail` (rather than a closed-over `patientId` v
 - Clinician has not accepted widget T&C for this organisation (T&C screen inside the iframe). See **Clinician Terms and Conditions (T&C) gate** in section 3.
 - Patient or GP data access is limited — confirm with List/Get patient flags and access-token errors above.
 
+### Patient cannot complete NHS Login (“already linked”)
+
+- Patient sees a message that their NHS login is already linked to another ORB account: usually a second ORB patient was created via Connect with a **different email** while the NHS number is already on the first account. Re-invite using the original email; see External API guide [Patients — data priority / NHS Login already linked](./specs/Orb%20API%20V1.0.4%20-%2020August2026.md#patients). Not an access-token or widget embed error.
+
 ### 404 from /access-token
 
 - The API key is not recognised by ORB.
@@ -428,7 +432,7 @@ Flow:
 
 **Re-signing:** one signature per organisation is enough. Once `contractSigned` is `true`, a further accept attempt inside the contract iframe returns **409** with `errorCode` **OrganisationContractAlreadySigned**. Do not re-open the signing UI after a successful sign; use `contract-status` instead.
 
-Until the contract is signed, clinician access to patient NHS data and most External API operations are blocked (**403** `{ "errorCode": "OrganisationContractNotSigned", ... }`). See the External API guide [Organisation contract (clinic)](specs/Orb%20API%20V1.0.3%20-%2003August2026.md#organisation-contract-clinic) for the allowed-before / blocked-until tables. The host (not ORB) decides which user sees the signing UI; ORB does not re-check `authorisedSignatory` on accept.
+Until the contract is signed, clinician access to patient NHS data and most External API operations are blocked (**403** `{ "errorCode": "OrganisationContractNotSigned", ... }`). See the External API guide [Organisation contract (clinic)](specs/Orb%20API%20V1.0.4%20-%2020August2026.md#organisation-contract-clinic) for the allowed-before / blocked-until tables. The host (not ORB) decides which user sees the signing UI; ORB does not re-check `authorisedSignatory` on accept.
 
 ---
 

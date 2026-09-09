@@ -31,7 +31,7 @@ info:
     External EHR IDs are used for Organisations, Users and Patients — ORB does not expose internal IDs.
 
     **Request validation (400):** When the request cannot be parsed or accepted—for example malformed JSON, a required body field missing, a query or path value in the wrong form (such as `offset=0sd` when an integer is expected), a value outside the permitted set (such as `"sex": "Female1"` when only defined values are accepted), or a property not defined for that operation (such as an unknown field `"newField"` in a PATCH or POST request body)—and no narrower ORB `errorCode` applies, the response always includes `errorCode` **InvalidRequestData** and a single `errorMessage`. The body contains **only** these two members. `errorMessage` is intended for display: either a fixed general sentence or—commonly—a short line naming one query parameter and the rejected value when only that parameter is at fault (see **ErrorResponseInvalidRequestData** in components/schemas). Wording may change in later API versions; use `errorCode` for programmatic handling and **do not** parse `errorMessage` for business logic.
-  version: "1.0.3"
+  version: "1.0.4"
   contact:
     name: ORB Integration Support
 
@@ -826,12 +826,14 @@ paths:
       description: |
         Returns an invitation link which can be sent to a patient as part of a link request.
 
-        - If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link.
+        - If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link
+          (**201**, `connectionStatus` **InviteSent**).
         - If the patient exists but is not connected, ORB validates that date of birth and surname match the
           existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as
           Connect by Email). Other request
-          fields are not applied on Connect (use Update Patient). An NHS invitation link is then returned.
-        - If the patient is already connected, response code 201 is returned with no invitation link.
+          fields are not applied on Connect (use Update Patient). When an invitation is issued, an NHS invitation
+          link is returned (**201**, `connectionStatus` **InviteSent**).
+        - If the patient is already connected, response code **201** is returned with no invitation link.
 
         In all previous cases, a data-access request link is returned only while `dataAccessStatus` is
         **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when
@@ -870,14 +872,18 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "200":
           description: >
-            connectionStatus is InviteNotSent or InviteExpired — NHS invitation and/or data-access links returned when applicable
+            Mapped only if connectionStatus were still InviteNotSent or InviteExpired. After a normal successful
+            Link call that issues an invitation, status is already InviteSent and the response is 201 — do not
+            rely on 200 for invite success.
           content:
             application/json; charset=utf-8:
               schema:
                 $ref: "#/components/schemas/ConnectPatientByLinkResponse"
         "201":
           description: >
-            connectionStatus is InviteSent or Connected — no new invite link unless `resend` is true; data-access link returned when applicable
+            Typical success — connectionStatus is InviteSent or Connected. When an NHS invitation link is issued,
+            ORB advances status to InviteSent and returns 201. Treat 201 as the invitation success path;
+            data-access link returned when applicable.
           content:
             application/json; charset=utf-8:
               schema:
@@ -1015,8 +1021,10 @@ paths:
         Returns the list of data permissions that the patient has granted to this organisation.
         Requires that the patient is connected to the organisation.
 
-        If the patient connection status is `Connected`, this endpoint returns the granted permissions.
-        If the connection status is `InviteSent` or `DataMismatch`, this endpoint returns 404.
+        If the patient connection status is `Connected`, this endpoint returns the granted permissions (HTTP 200).
+        If the connection status is any other value (`InviteNotSent`, `InviteSent`, `InviteExpired`, `DataMismatch`, or `Declined`),
+        this endpoint returns HTTP 404 with `errorCode` `PatientInvalidStatus`. Permissions are only available after NHS
+        connection is established (`Connected`).
 
         Issuing an access token checks that the patient is Connected and that organisation/patient data access is not limited.
         It does not check individual dataset grants (e.g. Allergies, Documents); those are enforced inside the widget when NHS
@@ -1060,7 +1068,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Patient or organisation not found, or patient connection not established
+          description: Patient or organisation not found, or patient is not Connected (`PatientInvalidStatus` — includes InviteNotSent, InviteSent, InviteExpired, DataMismatch, Declined)
           content:
             application/json; charset=utf-8:
               schema:

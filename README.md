@@ -5,9 +5,9 @@ This folder contains the Orb External API documentation used for NHS GP EHR inte
 
 ## Specs (source of truth)
 
-**ORB External API v1.0.3 (current release)**
+**ORB External API v1.0.4 (current release)**
 
-- **Integration guide (Markdown):** `./specs/Orb API V1.0.4 - 20August2026.md`
+- **Integration guide (Markdown):** `./specs/Orb API V1.0.4 - 07 September 2026.md`
 - **Integration guide (PDF):** `./specs/Orb API V1.0.4.pdf`
 - **OpenAPI — HTML:** `./specs/ORB API V1.0.4.html`
 - **OpenAPI — JSON:** `./specs/orb-external-api-v1.0.4.openapi.json`

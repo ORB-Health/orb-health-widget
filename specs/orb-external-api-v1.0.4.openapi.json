@@ -3,7 +3,7 @@
   "info": {
     "title": "ORB External API",
     "description": "ORB External API – Integration guide for EHR systems.\n\nORB supports integration with clinical EHR systems, allowing clinicians to access NHS records\non patients within the EHR. The API has two main parts:\n\n- **Data Model Linkage** – connects Organisations, Users and Patients from the EHR into ORB\n- **Data Access** – allows the EHR system to show specific Patient data when requested by a specific User\n\nThis API is **organisation-scoped**: all patient and user operations occur in the context of an Organisation.\n\nExternal EHR IDs are used for Organisations, Users and Patients — ORB does not expose internal IDs.\n\n**Request validation (400):** When the request cannot be parsed or accepted—for example malformed JSON, a required body field missing, a query or path value in the wrong form (such as `offset=0sd` when an integer is expected), or a value outside the permitted set (such as `\"sex\": \"Female1\"` when only defined values are accepted), or a property not defined for that operation (such as an unknown field `\"newField\"` in a PATCH or POST request body)—and no narrower ORB `errorCode` applies, the response always includes `errorCode` **InvalidRequestData** and a single `errorMessage`. The body contains **only** these two members. `errorMessage` is intended for display: either a fixed general sentence or—commonly—a short line naming one query parameter and the rejected value when only that parameter is at fault (see **ErrorResponseInvalidRequestData** in components/schemas). Wording may change in later API versions; use `errorCode` for programmatic handling and **do not** parse `errorMessage` for business logic.\n",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "contact": {
       "name": "ORB Integration Support"
     }
@@ -1140,7 +1140,7 @@
         ],
         "operationId": "connectPatientByLink",
         "summary": "Connect Patient by Link",
-        "description": "Returns an invitation link which can be sent to a patient as part of a link request.\n\n- If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link.\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as Connect by Email). Other request fields are not applied on Connect (use Update Patient). An NHS invitation link is then returned.\n- If the patient is already connected, response code 201 is returned with no invitation link.\n\nIn all previous cases, a data-access request link is returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. When an invitation or data-access link is issued, `declineInvitationLink` and/or `declineDataAccessRequestLink` are returned as well.\n\nCalling this endpoint again allows the EHR to obtain a fresh link as a **reminder**. An NHS invitation link is returned again only when `resend` is true while InviteSent (and the invitation rate limit allows), or without `resend` when connectionStatus is Declined. A data-access request link can be returned again only while status is RequestNotSent, RequestSent, or Declined and the data-access rate limit allows — `resend` is not required for data-access reminders. Exceeding a limit returns **429** ResendLimitExceeded.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nA returned data-access / consent link opens the ORB login page and does not expire after a fixed number of days\n(it is not a timed invitation token); the patient must sign in before reviewing access.\n",
+        "description": "Returns an invitation link which can be sent to a patient as part of a link request.\n\n- If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link (**201**, `connectionStatus` **InviteSent**).\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as Connect by Email). Other request fields are not applied on Connect (use Update Patient). When an invitation is issued, an NHS invitation link is returned (**201**, `connectionStatus` **InviteSent**).\n- If the patient is already connected, response code **201** is returned with no invitation link.\n\nIn all previous cases, a data-access request link is returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. When an invitation or data-access link is issued, `declineInvitationLink` and/or `declineDataAccessRequestLink` are returned as well.\n\nCalling this endpoint again allows the EHR to obtain a fresh link as a **reminder**. An NHS invitation link is returned again only when `resend` is true while InviteSent (and the invitation rate limit allows), or without `resend` when connectionStatus is Declined. A data-access request link can be returned again only while status is RequestNotSent, RequestSent, or Declined and the data-access rate limit allows — `resend` is not required for data-access reminders. Exceeding a limit returns **429** ResendLimitExceeded.\n\nPartners should treat **201** as the invitation success path. HTTP **200** is mapped only if `connectionStatus` were still InviteNotSent or InviteExpired; after a normal successful Link call that issues an invitation, status is already InviteSent and the response is **201**.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nA returned data-access / consent link opens the ORB login page and does not expire after a fixed number of days\n(it is not a timed invitation token); the patient must sign in before reviewing access.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -1161,7 +1161,7 @@
         },
         "responses": {
           "200": {
-            "description": "connectionStatus is InviteNotSent or InviteExpired — NHS invitation and/or data-access links returned when applicable",
+            "description": "Mapped only if connectionStatus were still InviteNotSent or InviteExpired. After a normal successful Link call that issues an invitation, status is already InviteSent and the response is 201 — do not rely on 200 for invite success.",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -1171,7 +1171,7 @@
             }
           },
           "201": {
-            "description": "connectionStatus is InviteSent or Connected — no new invite link unless `resend` is true; data-access link returned when applicable",
+            "description": "Typical success — connectionStatus is InviteSent or Connected. When an NHS invitation link is issued, ORB advances status to InviteSent and returns 201. Treat 201 as the invitation success path; data-access link returned when applicable.",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -1384,7 +1384,7 @@
         ],
         "operationId": "getGrantedPermissions",
         "summary": "Get Granted Permissions",
-        "description": "Returns the list of data permissions that the patient has granted to this organisation.\nRequires that the patient is connected to the organisation.\n\nIf the patient connection status is `Connected`, this endpoint returns the granted permissions.\nIf the connection status is `InviteSent` or `DataMismatch`, this endpoint returns 404.\n\nIssuing an access token checks that the patient is Connected and that organisation/patient data access is not limited.\nIt does not check individual dataset grants (e.g. Allergies, Documents); those are enforced inside the widget when NHS record data is fetched.\nThis permissions endpoint is informational for the EHR.\n",
+        "description": "Returns the list of data permissions that the patient has granted to this organisation.\nRequires that the patient is connected to the organisation.\n\nIf the patient connection status is `Connected`, this endpoint returns the granted permissions (HTTP 200).\nIf the connection status is any other value (`InviteNotSent`, `InviteSent`, `InviteExpired`, `DataMismatch`, or `Declined`), this endpoint returns HTTP 404 with `errorCode` `PatientInvalidStatus`. Permissions are only available after NHS connection is established (`Connected`).\n\nIssuing an access token checks that the patient is Connected and that organisation/patient data access is not limited.\nIt does not check individual dataset grants (e.g. Allergies, Documents); those are enforced inside the widget when NHS record data is fetched.\nThis permissions endpoint is informational for the EHR.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -1445,7 +1445,7 @@
             }
           },
           "404": {
-            "description": "Patient or organisation not found, or patient connection not established",
+            "description": "Patient or organisation not found, or patient is not Connected (`PatientInvalidStatus` — includes InviteNotSent, InviteSent, InviteExpired, DataMismatch, Declined)",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {

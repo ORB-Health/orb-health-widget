@@ -58,15 +58,17 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
   }
 
   const create = async () => {
-    if (!id || !name) return
-    await props.orb.createOrganisation(id, stripEmpty({
+    // Only gate on the path id — leave field validation to the API so 400s
+    // (e.g. missing organisationName) show in Last Response like other calls.
+    if (!id) return
+    const { ok } = await props.orb.createOrganisation(id, stripEmpty({
       organisationName: name,
       address1, address2, address3, address4,
       postcode, phoneNumber,
       cqcRegistrationNumber: cqc,
       researchOptOut
     }) as Parameters<OrbApi['createOrganisation']>[1])
-    props.onChanged()
+    if (ok) props.onChanged()
   }
 
   return (
@@ -94,7 +96,7 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
         <label><input type="checkbox" checked={researchOptOut} onChange={e => setResearchOptOut(e.target.checked)} /> Yes</label>
       </Grid2>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <button onClick={create} style={{ ...btnStyle, ...btnPrimary }} disabled={!id || !name}>POST Create</button>
+        <button onClick={create} style={{ ...btnStyle, ...btnPrimary }} disabled={!id}>POST Create</button>
         <button onClick={randomize} style={btnStyle}>Randomize</button>
         <button onClick={clear} style={btnStyle}>Clear</button>
       </div>

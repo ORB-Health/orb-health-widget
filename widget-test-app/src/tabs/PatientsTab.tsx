@@ -71,8 +71,10 @@ export function PatientsTab(props: {
         <PatientUpdateForm
           orb={props.orb}
           org={props.selectedOrg}
+          selectedUser={props.selectedUser}
           patients={props.patients}
           selectedPatient={props.selectedPatient}
+          showFlash={showFlash}
           onRefresh={props.onRefreshPatients}
           onChanged={props.onChanged}
         />
@@ -208,8 +210,10 @@ function PatientConnectForm(props: {
 function PatientUpdateForm(props: {
   orb: OrbApi
   org: string
+  selectedUser: string
   patients: PatientItem[]
   selectedPatient: string
+  showFlash: (msg: string) => void
   onRefresh: () => void
   onChanged: () => void
 }) {
@@ -264,6 +268,18 @@ function PatientUpdateForm(props: {
     props.onChanged()
   }
 
+  const connectLink = async () => {
+    if (!target) return
+    if (!props.selectedUser) return props.showFlash('Select a user (clinician) in Context first')
+    await props.orb.createConnectionLink(props.org, target, stripEmpty({
+      title, firstName, lastName,
+      dateOfBirth: normalizeDob(dob), sex,
+      emailAddress: email, postcode,
+      requestingClinicianId: props.selectedUser,
+    }) as Parameters<OrbApi['createConnectionLink']>[2])
+    props.onChanged()
+  }
+
   return (
     <Section title="Update Patient">
       <Hint>
@@ -272,6 +288,9 @@ function PatientUpdateForm(props: {
         <br />
         <b>lastName</b> and <b>dateOfBirth</b> are validated against the existing ORB record,
         not overwritten - a mismatch returns 409.
+        <br />
+        <b>POST connection-link</b> re-sends the connect call with the pre-filled values and
+        returns the invitation / data-access links for this existing patient.
       </Hint>
       <Grid2>
         <Label>Target patient</Label>
@@ -315,6 +334,7 @@ function PatientUpdateForm(props: {
       </Grid2>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button onClick={patch} style={{ ...btnStyle, ...btnPrimary }} disabled={!target}>PATCH Update</button>
+        <button onClick={connectLink} style={btnStyle} disabled={!target}>POST connection-link</button>
         <button onClick={randomize} style={btnStyle} disabled={!target}>Randomize new values</button>
       </div>
     </Section>

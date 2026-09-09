@@ -2,7 +2,7 @@
 
 **ORB External API – Integration guide for EHR systems**
 
-Document version: 1.0.4 | Last updated: 20 August 2026 — See the ORB External API v1.0.3 Mini Release Notes for changes from v1.0.2.
+Document version: 1.0.4 | Last updated: 07 September 2026 — See the ORB External API v1.0.4 Mini Release Notes for changes from v1.0.3.
 
 ---
 
@@ -1011,6 +1011,7 @@ A patient may have data from NHS, from ORB (entered by other organisations), and
   - **New patient** (email not already in ORB): ORB creates the patient record from the request body.
   - **Existing patient** (email match): ORB **validates** `dateOfBirth` and `lastName` against the stored record. If either differs, the request fails with **409** and `errorCode` **PatientDetailsMismatch**. Other supplied fields (`title`, `firstName`, `sex`, `emailAddress`, `postcode`) are **not** applied on Connect — use [Update Patient](#update-patient) to change demographics.
 - This Connect validation (ORB vs request body) is distinct from the **NHS→ORB mismatch** (when the patient has tried NHS login and ORB data did not match NHS), which is reported as **422** with a response body containing `connectionStatus` **DataMismatch** and the boolean fields `dobMismatch` / `surnameMismatch` (see Connect Patient by Email / by Link and Get Patient Connection Status).
+- **NHS Login already linked (patient-facing):** Connect matches existing ORB patients by **email only**. A new email creates a **new** ORB patient even if the person is the same. Each NHS number can be linked to **only one** ORB patient. If the patient later completes NHS Login on the new invite and that NHS number is already linked to another ORB account (often because they were invited earlier under a different email), ORB blocks linking on the patient UI. The External API does **not** return an `errorCode` for this on Connect — Get Connection Status for the new link typically stays **InviteSent** / **InviteExpired**. Guidance for clinics: reuse the email already associated with the patient’s ORB/NHS-linked account; do not create a second patient with a different email to “fix” connection. The patient message directs them to contact the inviting organisation or ORB Support.
 - **Update Patient** applies its own overwrite rules (see that endpoint): without NHS Login, supplied demographics overwrite ORB data; with NHS Login, `firstName` / `lastName` / `dateOfBirth` must be included and match the NHS-controlled values (omit → **409** `PatientDetailsMismatch`).
 
 ORB uses the following process when a connection request is made, updating patient statuses each time:
@@ -1549,7 +1550,7 @@ When a validation error occurs (422 status), the response body looks the same as
 | lastInvitationEmailDate    | string  | Optional; ISO-8601 date                                        |
 | lastAccessRequestEmailDate | string  | Optional; ISO-8601 date                                        |
 
-In case of any other error, a body with a single `errorMessage` property is returned, describing the error in a human-readable format.
+In case of any other error (for example **409** `PatientDetailsMismatch`, **429** `ResendLimitExceeded`, **404**), the response body uses the compact [Common Errors](#common-errors) shape with **both** `errorCode` and `errorMessage` present. Use `errorCode` for programmatic handling; `errorMessage` is for display only.
 
 ---
 
@@ -1559,10 +1560,10 @@ In case of any other error, a body with a single `errorMessage` property is retu
 
 Returns an invitation link, which can be sent to a patient as part of a link request.
 
-- If the patient does not exist, ORB creates a new patient record, a NHS invitation link is built and returned.
-- If the patient exists but is not connected, a NHS invitation link is built and returned.
+- If the patient does not exist, ORB creates a new patient record, a NHS invitation link is built and returned (**201**, `connectionStatus` **InviteSent**).
+- If the patient exists but is not connected, a NHS invitation link is built and returned (**201**, `connectionStatus` **InviteSent**) when an invitation is issued.
   In this case, ORB validates that date of birth and surname in the request match the existing ORB patient record (matched by email). A mismatch returns **409** (`PatientDetailsMismatch`) — same as Connect by Email. Other request fields are not applied on Connect — use [Update Patient](#update-patient) to change demographics.
-- If the patient is already connected, it is indicated with response code 201 and no link for NHS invitation is returned.
+- If the patient is already connected, it is indicated with response code **201** and no link for NHS invitation is returned.
 
 In all previous cases, a data-access request link is built and returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (and `connectionStatus` is not **DataMismatch** or **Declined**), subject to the data-access rate limit. After **Reviewed**, no data-access request link is returned. When an invitation or data-access link is issued, the response also includes the matching decline URL (`declineInvitationLink` / `declineDataAccessRequestLink`) for the EHR to pass to the patient if needed.
 
@@ -1653,8 +1654,8 @@ An NHS registration link expires after the configured invitation period (**7 day
 
 | Status | Meaning                                                                                                            |
 | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| 200    | `connectionStatus` is **InviteNotSent** or **InviteExpired** — NHS invitation and/or data-access links returned when applicable |
-| 201    | `connectionStatus` is **InviteSent** or **Connected** — no new invite link unless `resend` is true; data-access link returned when applicable |
+| 201    | Typical success — `connectionStatus` is **InviteSent** or **Connected**. When an NHS invitation link is issued (new/expired invite, Declined re-invite, or `resend: true`), ORB advances status to **InviteSent** and returns **201**. Treat **201** as the invitation success path (same body shape as below). |
+| 200    | Mapped only if `connectionStatus` were still **InviteNotSent** or **InviteExpired**. After a normal successful Link call that issues an invitation, status is already **InviteSent**, so partners should **not** rely on **200** for invite success. |
 | 400    | Connection failed due to invalid request or validation error |
 | 403    | Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`) |
 | 404    | Organisation or requesting clinician not found                                                                     |
@@ -1699,7 +1700,7 @@ When a validation error occurs (422 status), the response body looks the same as
 | lastInvitationEmailDate    | string  | Optional; ISO-8601 date                                        |
 | lastAccessRequestEmailDate | string  | Optional; ISO-8601 date                                        |
 
-In case of any other error, a body with a single `errorMessage` property is returned, describing the error in a human-readable format.
+In case of any other error (for example **409** `PatientDetailsMismatch`, **429** `ResendLimitExceeded`, **404**), the response body uses the compact [Common Errors](#common-errors) shape with **both** `errorCode` and `errorMessage` present. Use `errorCode` for programmatic handling; `errorMessage` is for display only.
 
 ---
 
@@ -1786,8 +1787,8 @@ Returns the list of data permissions that the patient has granted to this organi
 
 **Connection Status Requirements:**
 
-- If the patient connection status is `Connected`, this endpoint returns the granted permissions
-- If the connection status is `InviteSent` or `DataMismatch`, this endpoint returns `404 Not Found` (no connection established yet)
+- If the patient connection status is `Connected`, this endpoint returns the granted permissions (HTTP **200**).
+- If the connection status is **any other value** (`InviteNotSent`, `InviteSent`, `InviteExpired`, `DataMismatch`, or `Declined`), this endpoint returns HTTP **404** with `errorCode` **PatientInvalidStatus**. Permissions are only available after NHS connection is established (`Connected`).
 
 This can be used by the EHR to determine what data will be available before requesting an access token, or to display permission status to clinicians.
 
@@ -1840,7 +1841,7 @@ This can be used by the EHR to determine what data will be available before requ
 | 200    | OK - Returns array of permissions                                                                   |
 | 400 | Bad request |
 | 403    | Organisation not authorised to view this patient                                                    |
-| 404    | Patient or organisation not found, or patient connection not established (InviteSent, DataMismatch) |
+| 404    | Patient or organisation not found, or patient is not Connected (`PatientInvalidStatus` — includes InviteNotSent, InviteSent, InviteExpired, DataMismatch, Declined) |
 
 ---
 
