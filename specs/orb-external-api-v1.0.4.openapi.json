@@ -26,7 +26,7 @@
     },
     {
       "name": "Users",
-      "description": "Create, update, list and delete clinician users within an organisation"
+        "description": "Create, update, list and delete EHR-linked users within an organisation (clinical and non-clinical via isClinician)"
     },
     {
       "name": "Patients",
@@ -171,7 +171,7 @@
         ],
         "operationId": "updateOrganisation",
         "summary": "Update Organisation",
-        "description": "Updates organisation details or suspends/unsuspends the organisation.\nRequires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).\n\n- If an organisation is suspended it is not considered for billing, and no Users can access data via API.\n- Organisations cannot be suspended indefinitely. When suspending, the caller may specify `autoDeleteDays`\n  to set when automatic deletion happens. If not specified this happens in 180 days.\n- Organisations can be unsuspended to restore access for Users.\n",
+        "description": "Updates organisation details or suspends/unsuspends the organisation.\nRequires the organisation contract to be signed (`403` OrganisationContractNotSigned otherwise).\n\n- If an organisation is suspended it is not considered for billing, and no Users can access data via API.\n- Organisations cannot be suspended indefinitely. When suspending, the caller may specify `autoDeleteDays`\n  to set when automatic deletion happens. If not specified this happens in 180 days.\n- Organisations can be unsuspended to restore access for Users.\n- `phoneNumber` and `cqcRegistrationNumber` distinguish \"not supplied\" from \"supplied as empty\": omit the field to leave the stored value\n  unchanged, or send `null` (for `cqcRegistrationNumber` also an empty/whitespace-only string) to clear it. All other string fields ignore\n  empty or whitespace-only values and therefore cannot be cleared here.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -1566,7 +1566,7 @@
         ],
         "operationId": "requestAccessToken",
         "summary": "Request Access Token",
-        "description": "Returns a short-lived JWT used to access patient data via the ORB widget (iframe).\n\n**Security Model:**\n- The EHR must make this request server-side (never from the browser).\n- The request must include the `extUserId` of the clinician requesting access.\n- ORB validates that the user exists and belongs to the organisation, the user has `isClinician: true`, the organisation is not suspended,\n  the organisation has access to the patient, the patient is Connected,\n  and organisation/patient data access is not limited (`patientDataAccessLimited` / `gpDataAccessLimited`).\n  Individual dataset grants (e.g. Allergies, Documents) are enforced inside the widget when data is fetched, not at token issue.\n- The returned JWT is scoped to the specific user, patient, and organisation and includes `clientScopeId`.\n- Token expires in 15 minutes.\n- Requesting an access token is recorded as clinician access for audit purposes.\n- Issuing a token does **not** mean clinician widget T&C are accepted, and does **not** mean the organisation NHS module is enabled. T&C and the NHS-module unavailable screen are enforced inside the ORB widget. The External API does not expose accept/query endpoints for T&C.\n",
+        "description": "Returns a short-lived JWT used to access patient data via the ORB widget (iframe).\n\n**Security Model:**\n- The EHR must make this request server-side (never from the browser).\n- The request must include the `extUserId` of the clinician requesting access.\n- ORB validates that the user exists and belongs to the organisation, the user has `isClinician: true`, the organisation is not suspended,\n  the organisation has access to the patient, the patient is Connected,\n  and organisation/patient data access is not limited (`patientDataAccessLimited` / `gpDataAccessLimited`).\n  Individual dataset grants (e.g. Allergies, Documents) are enforced inside the widget when data is fetched, not at token issue.\n- The returned JWT is scoped to the specific user, patient, and organisation and includes `clientScopeId`.\n- Token expires in 15 minutes.\n- Requesting an access token is recorded as clinician access for audit purposes.\n- Issuing a token does **not** mean clinician widget T&C are accepted, and does **not** mean the organisation NHS module is enabled. T&C and the NHS-module unavailable screen are enforced inside the ORB widget (per user per organisation for T&C; mandatory tick-box; NHS data blocked until accepted). The External API does not expose accept/query endpoints for T&C.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -2330,8 +2330,7 @@
           "organisationName",
           "address1",
           "address2",
-          "postcode",
-          "cqcRegistrationNumber"
+          "postcode"
         ],
         "properties": {
           "organisationName": {
@@ -2364,7 +2363,7 @@
           },
           "cqcRegistrationNumber": {
             "type": "string",
-            "description": "CQC registration number"
+            "description": "CQC registration number. May be omitted or empty. Trimmed before storing."
           },
           "researchOptOut": {
             "type": "boolean",
@@ -2402,11 +2401,13 @@
           },
           "phoneNumber": {
             "type": "string",
-            "description": "Phone number"
+            "nullable": true,
+            "description": "Phone number. Send null to clear the stored number; omit to leave unchanged."
           },
           "cqcRegistrationNumber": {
             "type": "string",
-            "description": "CQC registration number"
+            "nullable": true,
+            "description": "CQC registration number (trimmed). Send null or an empty string to clear the stored number; omit to leave unchanged."
           },
           "researchOptOut": {
             "type": "boolean",

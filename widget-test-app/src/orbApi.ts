@@ -237,8 +237,10 @@ export interface UpdateOrganisationRequest {
   address3?: string
   address4?: string
   postcode?: string
-  phoneNumber?: string
-  cqcRegistrationNumber?: string
+  /** Omit to leave unchanged; null clears the stored value. */
+  phoneNumber?: string | null
+  /** Omit to leave unchanged; null or empty string clears the stored value. */
+  cqcRegistrationNumber?: string | null
   researchOptOut?: boolean
   suspended?: boolean
   /** Only honoured when suspending. Defaults to 180 days server-side. */

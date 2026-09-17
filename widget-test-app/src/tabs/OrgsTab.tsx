@@ -89,9 +89,9 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
         <Label>Postcode</Label>
         <input value={postcode} onChange={e => setPostcode(e.target.value)} style={inputStyle} />
         <Label>Phone</Label>
-        <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} />
+        <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>CQC Reg Number</Label>
-        <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} />
+        <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Research Opt-Out</Label>
         <label><input type="checkbox" checked={researchOptOut} onChange={e => setResearchOptOut(e.target.checked)} /> Yes</label>
       </Grid2>
@@ -167,6 +167,20 @@ function OrgUpdateForm(props: {
     props.onChanged()
   }
 
+  const clearPhone = async () => {
+    if (!target) return
+    await props.orb.updateOrganisation(target, { phoneNumber: null })
+    setPhoneNumber('')
+    props.onChanged()
+  }
+
+  const clearCqc = async () => {
+    if (!target) return
+    await props.orb.updateOrganisation(target, { cqcRegistrationNumber: null })
+    setCqc('')
+    props.onChanged()
+  }
+
   const suspend = async () => {
     if (!target) return
     await props.orb.updateOrganisation(target, stripEmpty({
@@ -197,6 +211,7 @@ function OrgUpdateForm(props: {
           Per spec, <code>GET /organisations/{'{id}'}</code> only returns <b>name</b>, <b>suspended</b>, and <b>autoDeleteDate</b>.
           Address / phone / CQC / researchOptOut are <b>not</b> returned, so they can't be pre-filled.
           Empty inputs are dropped from the PATCH body (<code>stripEmpty</code>) - blank means "don't change".
+          Use <b>Clear Phone</b> / <b>Clear CQC</b> to send <code>null</code> and clear the stored value.
         </Hint>
         <Grid2>
           <Label>Target organisation</Label>
@@ -232,6 +247,8 @@ function OrgUpdateForm(props: {
         </Grid2>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button onClick={save} style={{ ...btnStyle, ...btnPrimary }} disabled={!target}>PATCH Update</button>
+          <button onClick={clearPhone} style={btnStyle} disabled={!target}>Clear Phone</button>
+          <button onClick={clearCqc} style={btnStyle} disabled={!target}>Clear CQC</button>
           <button onClick={randomize} style={btnStyle} disabled={!target}>Randomize new values</button>
         </div>
       </Section>

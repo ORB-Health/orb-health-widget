@@ -2,7 +2,7 @@
 
 **ORB External API – Integration guide for EHR systems**
 
-Document version: 1.0.4 | Last updated: 07 September 2026 — See the ORB External API v1.0.4 Mini Release Notes for changes from v1.0.3.
+Document version: 1.0.4 | Last updated: 16 September 2026 — See the ORB External API v1.0.4 Mini Release Notes for changes from v1.0.3.
 
 ---
 
@@ -265,7 +265,7 @@ On create, ORB sets default NHS linking welcome text used on the patient-facing 
 | address4              | string  | No       | Fourth line of address                        |
 | postcode              | string  | Yes      | Postcode                                      |
 | phoneNumber           | string  | No       | Organisation phone number. May be omitted or empty. |
-| cqcRegistrationNumber | string  | Yes      | CQC registration number                       |
+| cqcRegistrationNumber | string  | No       | CQC registration number. May be omitted or empty. |
 | researchOptOut        | boolean | No       | Research opt-out flag (defaults to false/off) |
 
 Notes:
@@ -273,6 +273,7 @@ Notes:
 - extOrganisationId must be unique within the GovBody.
 - organisationName must be unique within the GovBody (case-insensitive).
 - `phoneNumber` is optional. If omitted or empty, the organisation is created without a phone number.
+- `cqcRegistrationNumber` is optional and is trimmed before storing. If omitted, empty or whitespace-only, the organisation is created without a CQC registration number.
 
 ### Responses
 
@@ -295,6 +296,7 @@ Updates organisation details or suspends / unsuspends the organisation. Requires
 - If an organisation is suspended it is not considered for billing, and no Users can access data via API.  Patients are unaffected - Patients can still login/register with the Organisation via the ORB UI.
 - Organisations cannot be suspended indefinitely.  When suspending, the caller may specify `autoDeleteDays` to set when automatic deletion happens. If not specified this happens in 180 days.
 - Organisations can be unsuspended using this feature to restore access for Users accessing data via API, and will again be considered for billing.
+- **Clearing `phoneNumber` / `cqcRegistrationNumber`:** these two fields distinguish "not supplied" from "supplied as empty". Omit the field to leave the stored value unchanged; send `null` (or, for `cqcRegistrationNumber`, an empty or whitespace-only string) to clear it. `cqcRegistrationNumber` is trimmed before storing. All other string fields (`organisationName`, `address1`–`address4`, `postcode`) ignore empty or whitespace-only values, so they cannot be cleared through this endpoint.
 
 ### Path Parameters
 
@@ -332,8 +334,8 @@ Updates organisation details or suspends / unsuspends the organisation. Requires
 | address3              | string  | No       | Third line of address                                       |
 | address4              | string  | No       | Fourth line of address                                      |
 | postcode              | string  | No       | Postcode                                                    |
-| phoneNumber           | string  | No       | Phone number                                                |
-| cqcRegistrationNumber | string  | No       | CQC registration number                                     |
+| phoneNumber           | string? | No       | Phone number. Send `null` to clear the stored number; omit to leave unchanged |
+| cqcRegistrationNumber | string? | No       | CQC registration number (trimmed). Send `null` or an empty string to clear the stored number; omit to leave unchanged |
 | researchOptOut        | boolean | No       | Research opt-out flag                                       |
 | suspended             | boolean | No       | Suspended flag                                              |
 | autoDeleteDays        | number  | No       | Auto-delete after suspension in days (max 180, default 180) |

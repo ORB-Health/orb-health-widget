@@ -152,6 +152,9 @@ paths:
         - Organisations cannot be suspended indefinitely. When suspending, the caller may specify `autoDeleteDays`
           to set when automatic deletion happens. If not specified this happens in 180 days.
         - Organisations can be unsuspended to restore access for Users.
+        - `phoneNumber` and `cqcRegistrationNumber` distinguish "not supplied" from "supplied as empty": omit the field to leave the stored value
+          unchanged, or send `null` (for `cqcRegistrationNumber` also an empty/whitespace-only string) to clear it. All other string fields ignore
+          empty or whitespace-only values and therefore cannot be cleared here.
       parameters:
         - $ref: "#/components/parameters/extOrganisationId"
       requestBody:
@@ -848,6 +851,10 @@ paths:
         or Declined and the data-access rate limit allows — `resend` is not required for data-access reminders.
         Exceeding a limit returns **429** `ResendLimitExceeded`.
 
+        Partners should treat **201** as the invitation success path. HTTP **200** is mapped only if
+        `connectionStatus` were still InviteNotSent or InviteExpired; after a normal successful Link call that
+        issues an invitation, status is already InviteSent and the response is **201**.
+
         **Link validity:** NHS registration links expire after a system-configurable period (7 days by default).
         Generating a replacement invalidates the previous registration link and restarts the expiry period.
         The data-access / consent link opens the ORB login page and does not expire after a fixed number of days
@@ -1163,8 +1170,8 @@ paths:
         - ORB validates that the user exists and belongs to the organisation, the user has `isClinician: true`,
           the organisation is not suspended, the organisation has access
           to the patient, the patient is Connected, and organisation/patient data access is not limited
-          (`patientDataAccessLimited` / `gpDataAccessLimited`). Individual dataset grants are enforced inside the widget
-          when data is fetched, not at token issue.
+          (`patientDataAccessLimited` / `gpDataAccessLimited`). Individual dataset grants (e.g. Allergies, Documents)
+          are enforced inside the widget when data is fetched, not at token issue.
         - The returned JWT is scoped to the specific user, patient, and organisation and includes `clientScopeId`.
         - Token expires in 15 minutes.
         - Requesting an access token is recorded as clinician access for audit purposes.
@@ -1808,7 +1815,6 @@ components:
         - address1
         - address2
         - postcode
-        - cqcRegistrationNumber
       properties:
         organisationName:
           type: string
@@ -1833,7 +1839,7 @@ components:
           description: Organisation phone number. May be omitted or empty.
         cqcRegistrationNumber:
           type: string
-          description: CQC registration number
+          description: CQC registration number. May be omitted or empty. Trimmed before storing.
         researchOptOut:
           type: boolean
           description: Research opt-out flag (defaults to false)
@@ -1862,10 +1868,12 @@ components:
           description: Postcode
         phoneNumber:
           type: string
-          description: Phone number
+          nullable: true
+          description: Phone number. Send null to clear the stored number; omit to leave unchanged.
         cqcRegistrationNumber:
           type: string
-          description: CQC registration number
+          nullable: true
+          description: CQC registration number (trimmed). Send null or an empty string to clear the stored number; omit to leave unchanged.
         researchOptOut:
           type: boolean
           description: Research opt-out flag
