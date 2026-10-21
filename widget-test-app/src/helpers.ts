@@ -1,11 +1,20 @@
+/** True for the text `null` in any case, which the "real null" setting sends as JSON null. */
+export function isNullLiteral(value: unknown): boolean {
+  return typeof value === 'string' && value.toLowerCase() === 'null'
+}
+
 /**
  * Drop fields whose value is '' / null / undefined. The ORB API's enum and
  * date converters reject empty strings with 400, so we strip them before
- * sending PATCH/POST bodies.
+ * sending PATCH/POST bodies. With `sendNullLiteral`, a field typed as `null`
+ * is kept and sent as JSON null.
  */
-export function stripEmpty<T extends Record<string, unknown>>(obj: T): Partial<T> {
+export function stripEmpty<T extends Record<string, unknown>>(obj: T, sendNullLiteral = false): Partial<T> {
   return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== '' && v !== undefined && v !== null)
+    Object.entries(obj).flatMap(([k, v]): [string, unknown][] => {
+      if (sendNullLiteral && isNullLiteral(v)) return [[k, null]]
+      return v === '' || v === undefined || v === null ? [] : [[k, v]]
+    })
   ) as Partial<T>
 }
 

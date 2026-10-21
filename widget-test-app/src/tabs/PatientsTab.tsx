@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { OrbApi, PatientItem, ListPatientsQuery } from '../orbApi'
 import { usePersistedState } from '../storage'
 import { stripEmpty, normalizeDob } from '../helpers'
+import { useSendNullLiteral } from '../settings'
 import { randomPatientData } from '../random'
 import { Section, Grid2, Label, Hint, SubTabs, FromServer, MustMatchSurname, MustMatchDob } from '../ui'
 import { inputStyle, btnStyle, btnPrimary, btnDanger } from '../styles'
@@ -116,6 +117,7 @@ function PatientConnectForm(props: {
   const [email, setEmail] = useState('')
   const [postcode, setPostcode] = useState('')
   const [resend, setResend] = useState(false)
+  const sendNullLiteral = useSendNullLiteral()
 
   const randomize = () => {
     const r = randomPatientData()
@@ -136,7 +138,7 @@ function PatientConnectForm(props: {
     emailAddress: email, postcode,
     requestingClinicianId: props.selectedUser,
     ...(resend ? { resend: true } : {}),
-  })
+  }, sendNullLiteral)
 
   const connectEmail = async () => {
     if (!props.selectedUser) return props.showFlash('Select a user (clinician) in Context first')
@@ -155,7 +157,7 @@ function PatientConnectForm(props: {
   }
 
   return (
-    <Section title="Connect Patient (Email or Link)">
+    <Section title="Connect Patient (Email or Link)" className="orb-null-scope">
       <Grid2>
         <Label>extOrganisationId</Label>
         <input value={props.org} disabled style={{ ...inputStyle, background: '#f5f5f5' }} />
@@ -218,6 +220,7 @@ function PatientUpdateForm(props: {
   onChanged: () => void
 }) {
   const [target, setTarget] = useState(props.selectedPatient)
+  const sendNullLiteral = useSendNullLiteral()
   const [title, setTitle] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -264,7 +267,7 @@ function PatientUpdateForm(props: {
       title, firstName, lastName,
       dateOfBirth: normalizeDob(dob), sex,
       emailAddress: email, postcode,
-    }) as Parameters<OrbApi['updatePatient']>[2])
+    }, sendNullLiteral) as Parameters<OrbApi['updatePatient']>[2])
     props.onChanged()
   }
 
@@ -276,12 +279,12 @@ function PatientUpdateForm(props: {
       dateOfBirth: normalizeDob(dob), sex,
       emailAddress: email, postcode,
       requestingClinicianId: props.selectedUser,
-    }) as Parameters<OrbApi['createConnectionLink']>[2])
+    }, sendNullLiteral) as Parameters<OrbApi['createConnectionLink']>[2])
     props.onChanged()
   }
 
   return (
-    <Section title="Update Patient">
+    <Section title="Update Patient" className="orb-null-scope">
       <Hint>
         Values pre-fill from the cached patient list (no GET-one-patient endpoint exists).
         Click <b>↻</b> next to the dropdown to refresh. Empty inputs are dropped from PATCH.

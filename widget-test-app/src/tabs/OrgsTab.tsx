@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { OrbApi, OrgItem } from '../orbApi'
 import { usePersistedState } from '../storage'
 import { stripEmpty } from '../helpers'
+import { useSendNullLiteral } from '../settings'
 import { randomOrgData } from '../random'
 import { Section, Grid2, Label, Hint, SubTabs, FromServer, NotReturned } from '../ui'
 import { inputStyle, btnStyle, btnPrimary, btnDanger } from '../styles'
@@ -41,6 +42,7 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [cqc, setCqc] = useState('')
   const [researchOptOut, setResearchOptOut] = useState(false)
+  const sendNullLiteral = useSendNullLiteral()
 
   const randomize = () => {
     const r = randomOrgData()
@@ -67,27 +69,27 @@ function OrgCreateForm(props: { orb: OrbApi; onChanged: () => void }) {
       postcode, phoneNumber,
       cqcRegistrationNumber: cqc,
       researchOptOut
-    }) as Parameters<OrbApi['createOrganisation']>[1])
+    }, sendNullLiteral) as Parameters<OrbApi['createOrganisation']>[1])
     if (ok) props.onChanged()
   }
 
   return (
-    <Section title="Create Organisation">
+    <Section title="Create Organisation" className="orb-null-scope">
       <Grid2>
         <Label>extOrganisationId</Label>
         <input value={id} onChange={e => setId(e.target.value)} style={inputStyle} placeholder="e.g. ORG-001" />
         <Label>Name</Label>
         <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} />
         <Label>Address 1</Label>
-        <input value={address1} onChange={e => setAddress1(e.target.value)} style={inputStyle} />
+        <input value={address1} onChange={e => setAddress1(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Address 2</Label>
-        <input value={address2} onChange={e => setAddress2(e.target.value)} style={inputStyle} />
+        <input value={address2} onChange={e => setAddress2(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Address 3</Label>
         <input value={address3} onChange={e => setAddress3(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Address 4</Label>
         <input value={address4} onChange={e => setAddress4(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Postcode</Label>
-        <input value={postcode} onChange={e => setPostcode(e.target.value)} style={inputStyle} />
+        <input value={postcode} onChange={e => setPostcode(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>Phone</Label>
         <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} placeholder="(optional)" />
         <Label>CQC Reg Number</Label>
@@ -122,6 +124,10 @@ function OrgUpdateForm(props: {
   const [researchOptOut, setResearchOptOut] = useState(false)
   const [autoDeleteDays, setAutoDeleteDays] = useState('')
   const [current, setCurrent] = useState<OrgItem | null>(null)
+  const sendNullLiteral = useSendNullLiteral()
+  const writeOnlyPlaceholder = sendNullLiteral
+    ? '(blank = keep, null = clear)'
+    : '(not pre-filled; type to change)'
 
   useEffect(() => {
     if (!target) { setCurrent(null); return }
@@ -163,7 +169,7 @@ function OrgUpdateForm(props: {
       organisationName: name, address1, address2, address3, address4,
       postcode, phoneNumber, cqcRegistrationNumber: cqc,
       researchOptOut
-    }) as Parameters<OrbApi['updateOrganisation']>[1])
+    }, sendNullLiteral) as Parameters<OrbApi['updateOrganisation']>[1])
     props.onChanged()
   }
 
@@ -206,12 +212,15 @@ function OrgUpdateForm(props: {
 
   return (
     <>
-      <Section title="Update Organisation">
+      <Section title="Update Organisation" className="orb-null-scope">
         <Hint>
           Per spec, <code>GET /organisations/{'{id}'}</code> only returns <b>name</b>, <b>suspended</b>, and <b>autoDeleteDate</b>.
           Address / phone / CQC / researchOptOut are <b>not</b> returned, so they can't be pre-filled.
           Empty inputs are dropped from the PATCH body (<code>stripEmpty</code>) - blank means "don't change".
-          Use <b>Clear Phone</b> / <b>Clear CQC</b> to send <code>null</code> and clear the stored value.
+          {sendNullLiteral
+            ? <> Type <span className="orb-null-sample">null</span> in a field to clear its stored value.</>
+            : <> To clear a stored value, use <b>Clear Phone</b> / <b>Clear CQC</b>, or tick <b>Send null as a real null</b> in
+              Configuration and type <code>null</code> in the field.</>}
         </Hint>
         <Grid2>
           <Label>Target organisation</Label>
@@ -229,19 +238,19 @@ function OrgUpdateForm(props: {
           <Label>Name <FromServer /></Label>
           <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} />
           <Label>Address 1 <NotReturned /></Label>
-          <input value={address1} onChange={e => setAddress1(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={address1} onChange={e => setAddress1(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Address 2 <NotReturned /></Label>
-          <input value={address2} onChange={e => setAddress2(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={address2} onChange={e => setAddress2(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Address 3 <NotReturned /></Label>
-          <input value={address3} onChange={e => setAddress3(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={address3} onChange={e => setAddress3(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Address 4 <NotReturned /></Label>
-          <input value={address4} onChange={e => setAddress4(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={address4} onChange={e => setAddress4(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Postcode <NotReturned /></Label>
-          <input value={postcode} onChange={e => setPostcode(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={postcode} onChange={e => setPostcode(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Phone <NotReturned /></Label>
-          <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>CQC Reg Number <NotReturned /></Label>
-          <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} placeholder="(not pre-filled; type to change)" />
+          <input value={cqc} onChange={e => setCqc(e.target.value)} style={inputStyle} placeholder={writeOnlyPlaceholder} />
           <Label>Research Opt-Out <NotReturned /></Label>
           <label><input type="checkbox" checked={researchOptOut} onChange={e => setResearchOptOut(e.target.checked)} /> Yes</label>
         </Grid2>
