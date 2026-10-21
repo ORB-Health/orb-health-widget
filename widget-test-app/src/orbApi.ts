@@ -18,7 +18,12 @@
  * (usually a problem-details object) so you can inspect it yourself rather
  * than having an exception thrown at you.
  *
- * Auth: every request sends an `X-API-KEY` header.
+ * Auth: requests made for an organisation (path `/organisations/{id}/...` or
+ * stats `extOrganizationKey`) send that organisation's `X-ORG-API-KEY` (from
+ * `getOrgApiKey`) when one is set, otherwise the GovBody `X-API-KEY`.
+ * Create / Delete Organisation, Generate Organisation API Key, List
+ * Organisations and stats without `extOrganizationKey` always send only the
+ * GovBody `X-API-KEY`.
  *
  * For widget / iframe integration, see widgetIntegration.ts - it uses
  * requestAccessToken() from this file.
@@ -139,6 +144,14 @@ export interface AccessTokenResponse {
   expiresIn: number
 }
 
+export interface OrganisationApiKeyResponse {
+  extOrganisationId: string
+  /** Returned only by the call that generated it. */
+  apiKey: string
+  /** ISO-8601, or null when the key does not expire. */
+  apiKeyExpiresAt: string | null
+}
+
 // ============================================================================
 // Stats (GET /stats/*) - all endpoints return one row per organisation the
 // API key can see, optionally narrowed to a single org. Note the mixed
@@ -232,11 +245,12 @@ export interface CreateOrganisationRequest {
 
 export interface UpdateOrganisationRequest {
   organisationName?: string
-  address1?: string
-  address2?: string
-  address3?: string
-  address4?: string
-  postcode?: string
+  /** Address fields: omit to leave unchanged; null clears the stored value. */
+  address1?: string | null
+  address2?: string | null
+  address3?: string | null
+  address4?: string | null
+  postcode?: string | null
   /** Omit to leave unchanged; null clears the stored value. */
   phoneNumber?: string | null
   /** Omit to leave unchanged; null or empty string clears the stored value. */
@@ -361,8 +375,17 @@ export interface RequestLog {
 export interface OrbApiConfig {
   /** e.g. "https://api.orbforhealth.com/v1". Trailing slash is trimmed. */
   baseUrl: string
-  /** Sent as X-API-KEY on every request. */
+  /**
+   * GovBody key sent as X-API-KEY on Create / Delete Organisation, List
+   * Organisations, stats without an organisation, and organisation requests
+   * when no organisation key is set.
+   */
   apiKey: string
+  /**
+   * Returns the organisation API key sent as X-ORG-API-KEY (instead of
+   * X-API-KEY) on requests made for that organisation.
+   */
+  getOrgApiKey?: (extOrganisationId: string) => string | undefined
   /**
    * Optional hook called once per request (on response or on network error).
    * Useful for debugging / logging in a test harness.
@@ -381,8 +404,29 @@ function statsQueryString(query?: StatsQuery): string {
   return qs ? '?' + qs : ''
 }
 
+function extOrganisationIdOf(path: string): string | undefined {
+  const routeMatch = /^\/organisations\/([^/?]+)/.exec(path)
+  if (routeMatch) return decodeURIComponent(routeMatch[1])
+
+  const queryIndex = path.indexOf('?')
+  if (queryIndex < 0) return undefined
+
+  return new URLSearchParams(path.slice(queryIndex + 1)).get('extOrganizationKey') ?? undefined
+}
+
 export function createOrbApi(config: OrbApiConfig) {
   const base = config.baseUrl.replace(/\/+$/, '')
+
+  function authHeaders(method: string, path: string): Record<string, string> {
+    const extOrganisationId = extOrganisationIdOf(path)
+    const isGovBodyOnly =
+      ((method === 'POST' || method === 'DELETE') && /^\/organisations\/[^/?]+$/.test(path)) ||
+      (method === 'POST' && /^\/organisations\/[^/?]+\/api-key$/.test(path))
+    if (!extOrganisationId || isGovBodyOnly) return { 'X-API-KEY': config.apiKey }
+
+    const orgApiKey = config.getOrgApiKey?.(extOrganisationId)
+    return orgApiKey ? { 'X-ORG-API-KEY': orgApiKey } : { 'X-API-KEY': config.apiKey }
+  }
 
   async function request<T = unknown>(
     method: string,
@@ -390,7 +434,7 @@ export function createOrbApi(config: OrbApiConfig) {
     body?: unknown
   ): Promise<ApiResult<T>> {
     const headers: Record<string, string> = {
-      'X-API-KEY': config.apiKey,
+      ...authHeaders(method, path),
       'Content-Type': 'application/json',
     }
     const requestBody = body !== undefined ? JSON.stringify(body) : undefined
@@ -432,9 +476,7 @@ export function createOrbApi(config: OrbApiConfig) {
     path: string,
     form: FormData
   ): Promise<ApiResult<T>> {
-    const headers: Record<string, string> = {
-      'X-API-KEY': config.apiKey,
-    }
+    const headers: Record<string, string> = authHeaders(method, path)
     // For the log panel, summarise the parts rather than the raw binary.
     const summary: string[] = []
     form.forEach((v, k) => {
@@ -517,6 +559,16 @@ export function createOrbApi(config: OrbApiConfig) {
       request<void>('DELETE', `/organisations/${extOrganisationId}`),
 
     /**
+     * POST /organisations/{id}/api-key - GovBody key only.
+     *
+     * Generates the organisation's X-ORG-API-KEY if it has none and returns
+     * it (201). 409 OrgApiKeyAlreadyExists when the organisation already has
+     * a key, which ORB cannot return again.
+     */
+    generateOrganisationApiKey: (extOrganisationId: string) =>
+      request<OrganisationApiKeyResponse>('POST', `/organisations/${extOrganisationId}/api-key`),
+
+    /**
      * POST /organisations/{id}/branding - multipart upload.
      *
      * The logo is only changed when `overwriteLogo=true` is sent: with a
@@ -544,7 +596,8 @@ export function createOrbApi(config: OrbApiConfig) {
      *
      * Mints a short-lived JWT scoped to the organisation (no patient) for
      * embedding the contract-signing widget iframe. Authenticated with the
-     * X-API-KEY header like every other call - the JWT is only for the iframe.
+     * organisation or GovBody key like every other organisation call -
+     * the JWT is only for the iframe.
      */
     requestContractAccessToken: (extOrganisationId: string) =>
       request<AccessTokenResponse>(

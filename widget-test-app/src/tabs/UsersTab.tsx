@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { OrbApi, UserItem } from '../orbApi'
 import { usePersistedState } from '../storage'
 import { stripEmpty } from '../helpers'
+import { useSendNullLiteral } from '../settings'
 import { randomUserData } from '../random'
 import { Section, Grid2, Label, Hint, SubTabs } from '../ui'
 import { inputStyle, btnStyle, btnPrimary, btnDanger } from '../styles'
@@ -46,6 +47,7 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
   const [isClinician, setIsClinician] = useState(true)
   const [isLocum, setIsLocum] = useState(false)
   const [authorisedSignatory, setAuthorisedSignatory] = useState(false)
+  const sendNullLiteral = useSendNullLiteral()
 
   const randomize = () => {
     const r = randomUserData()
@@ -67,12 +69,12 @@ function UserCreateForm(props: { orb: OrbApi; org: string; onChanged: () => void
       isClinician,
       isLocum,
       authorisedSignatory
-    }) as Parameters<OrbApi['createUser']>[2])
+    }, sendNullLiteral) as Parameters<OrbApi['createUser']>[2])
     props.onChanged()
   }
 
   return (
-    <Section title="Create User">
+    <Section title="Create User" className="orb-null-scope">
       <Grid2>
         <Label>extOrganisationId</Label>
         <input value={props.org} disabled style={{ ...inputStyle, background: '#f5f5f5' }} />
@@ -117,6 +119,7 @@ function UserUpdateForm(props: {
   const [isClinician, setIsClinician] = useState(false)
   const [isLocum, setIsLocum] = useState(false)
   const [authorisedSignatory, setAuthorisedSignatory] = useState(false)
+  const sendNullLiteral = useSendNullLiteral()
 
   useEffect(() => {
     if (!target) {
@@ -150,7 +153,7 @@ function UserUpdateForm(props: {
       isClinician,
       isLocum,
       authorisedSignatory
-    }) as Parameters<OrbApi['updateUser']>[2])
+    }, sendNullLiteral) as Parameters<OrbApi['updateUser']>[2])
     props.onChanged()
   }
 
@@ -163,7 +166,7 @@ function UserUpdateForm(props: {
   }
 
   return (
-    <Section title="Update User">
+    <Section title="Update User" className="orb-null-scope">
       <Hint>
         Values pre-fill from the cached user list (all fields are returned by <code>GET /users</code>).
         Click <b>↻</b> next to the dropdown to refresh. Empty inputs are dropped from PATCH.

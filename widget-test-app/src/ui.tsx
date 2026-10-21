@@ -198,6 +198,75 @@ export function MustMatchDob() {
 }
 
 // ---------------------------------------------------------------------------
+// "?" help icon. Opens on hover or focus; a click pins it open until the next
+// click outside or Escape.
+// ---------------------------------------------------------------------------
+
+export function HelpTip({ label, children }: { label: string; children: ReactNode }) {
+  const [hovered, setHovered] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const open = hovered || pinned
+
+  useEffect(() => {
+    if (!pinned) return
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setPinned(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setPinned(false); setHovered(false) }
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [pinned])
+
+  return (
+    <span
+      ref={wrapRef}
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setPinned(p => !p)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        style={{
+          width: 18, height: 18, padding: 0, borderRadius: '50%',
+          border: '1px solid ' + (open ? '#2e3138' : '#c3c7ce'),
+          background: open ? '#2e3138' : '#fff',
+          color: open ? '#fff' : '#6b7280',
+          fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: 'help',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'background 120ms, color 120ms, border-color 120ms'
+        }}>
+        ?
+      </button>
+      {open && (
+        <span role="tooltip" style={{
+          position: 'absolute', top: 'calc(100% + 8px)', left: -12, zIndex: 30,
+          width: 340, padding: '10px 12px', borderRadius: 6,
+          background: '#2e3138', color: '#f3f4f6', boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+          fontSize: 12, lineHeight: 1.55, fontWeight: 400, textAlign: 'left', cursor: 'default'
+        }}>
+          <span style={{
+            position: 'absolute', top: -5, left: 16, width: 10, height: 10,
+            background: '#2e3138', transform: 'rotate(45deg)'
+          }} />
+          {children}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Input with localStorage-backed history dropdown
 // ---------------------------------------------------------------------------
 

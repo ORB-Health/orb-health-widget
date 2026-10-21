@@ -15,10 +15,11 @@ import {
 } from './widgetIntegration'
 import type { LogEntry, TabName, OrgContractStatus } from './types'
 import { loadStored, saveStored, usePersistedState } from './storage'
+import { SendNullLiteralContext } from './settings'
 import { inputStyle, btnStyle } from './styles'
 import {
   Section, Grid2, Label, TabButton,
-  InputWithHistory, LastResponsePanel, LogDetailTabs, Spinner,
+  InputWithHistory, LastResponsePanel, LogDetailTabs, Spinner, HelpTip,
 } from './ui'
 import { WidgetTab } from './tabs/WidgetTab'
 import { OrgsTab } from './tabs/OrgsTab'
@@ -38,9 +39,13 @@ export default function App() {
     // Migrate from the old split apiBaseUrl/widgetBaseUrl pair.
     const oldApi = loadStored<string>('apiBaseUrl', '')
     if (oldApi) return oldApi.replace(/\/+$/, '').replace(/\/v1$/, '')
-    return 'https://apitest-api.orbforhealth.com'
+    return 'https://api-test-app.orbforhealth.com'
   })
   const [apiKey, setApiKey] = usePersistedState('apiKey', '')
+  // X-ORG-API-KEY per extOrganisationId.
+  const [orgApiKeys, setOrgApiKeys] = usePersistedState<Record<string, string>>('orgApiKeys', {})
+  const getOrgApiKey = useCallback((extOrganisationId: string) => orgApiKeys[extOrganisationId], [orgApiKeys])
+  const [sendNullLiteral, setSendNullLiteral] = usePersistedState('sendNullLiteral', false)
   const serverBase = serverUrl.replace(/\/+$/, '').replace(/\/(v1|medical-record-embedded)$/, '')
   const apiBaseUrl = `${serverBase}/v1`
   const widgetBaseUrl = `${serverBase}/medical-record-embedded`
@@ -57,6 +62,19 @@ export default function App() {
   // Bump on each load; a response whose id is stale (org changed mid-flight) is dropped.
   const usersReqRef = useRef(0)
   const patientsReqRef = useRef(0)
+
+  // Organisations added by ID + Org API key, so they can be used without the GovBody key
+  // (List Organisations only accepts the GovBody key). Value is the name returned by Get Organisation.
+  const [manualOrgNames, setManualOrgNames] = usePersistedState<Record<string, string>>('manualOrgNames', {})
+  const [manualOrgId, setManualOrgId] = useState('')
+  const [manualOrgKey, setManualOrgKey] = useState('')
+  const knownOrgs: OrgItem[] = useMemo(() => {
+    const listed = new Set(orgs.map(o => o.extOrganisationId))
+    const manual = Object.keys(orgApiKeys)
+      .filter(id => !listed.has(id))
+      .map(id => ({ extOrganisationId: id, organisationName: manualOrgNames[id] ?? id, suspended: false }))
+    return [...orgs, ...manual]
+  }, [orgs, orgApiKeys, manualOrgNames])
 
   const [selectedOrg, setSelectedOrg] = usePersistedState('selectedOrg', '')
   const [selectedUser, setSelectedUser] = usePersistedState('selectedUser', '')
@@ -166,12 +184,12 @@ export default function App() {
   // on context change, post-CUD list refreshes, token auto-refresh) use the
   // silent one so the panel only shows calls the user actually triggered.
   const orb: OrbApi = useMemo(
-    () => createOrbApi({ baseUrl: apiBaseUrl, apiKey, onRequest: addLog }),
-    [apiBaseUrl, apiKey, addLog]
+    () => createOrbApi({ baseUrl: apiBaseUrl, apiKey, getOrgApiKey, onRequest: addLog }),
+    [apiBaseUrl, apiKey, getOrgApiKey, addLog]
   )
   const orbSilent: OrbApi = useMemo(
-    () => createOrbApi({ baseUrl: apiBaseUrl, apiKey }),
-    [apiBaseUrl, apiKey]
+    () => createOrbApi({ baseUrl: apiBaseUrl, apiKey, getOrgApiKey }),
+    [apiBaseUrl, apiKey, getOrgApiKey]
   )
 
   // ===================================================================
@@ -180,13 +198,15 @@ export default function App() {
   // ===================================================================
   const loadOrgs = useCallback(async (silent = false) => {
     setError(null)
+    // List Organisations needs the GovBody key; organisations added with an Org API key stay listed.
+    if (!apiKey) { setOrgs([]); return }
     const client = silent ? orbSilent : orb
     try {
       const { ok, status, data } = await client.listOrganisations()
       if (ok && Array.isArray(data)) setOrgs(data)
       else if (!ok) setError(`Failed to load orgs: ${status}`)
     } catch (e) { setError(String(e)) }
-  }, [orb, orbSilent])
+  }, [orb, orbSilent, apiKey])
 
   const loadUsers = useCallback(async (orgId: string, silent = false) => {
     if (!orgId) { setUsers([]); setUsersLoading(false); return }
@@ -364,6 +384,42 @@ export default function App() {
     }
   }
 
+  const generateOrgApiKey = async () => {
+    setError(null)
+    if (!selectedOrg) return
+    const org = selectedOrg
+    const { ok, status, data } = await orb.generateOrganisationApiKey(org)
+    if (!ok || !data) {
+      setError(status === 409
+        ? 'This organisation already has an API key; ORB cannot return it again'
+        : `Generate organisation API key failed: ${status}`)
+      return
+    }
+    setOrgApiKeys(prev => ({ ...prev, [org]: data.apiKey }))
+  }
+
+  const addOrgWithApiKey = async () => {
+    setError(null)
+    const id = manualOrgId.trim()
+    const key = manualOrgKey.trim()
+    if (!id || !key) return
+    // Check the key against Get Organisation before storing it.
+    const client = createOrbApi({ baseUrl: apiBaseUrl, apiKey: '', getOrgApiKey: () => key, onRequest: addLog })
+    const { ok, status, data } = await client.getOrganisation(id)
+    if (!ok || !data) {
+      const errorBody = data as { errorMessage?: string } | null
+      setError(`Organisation key check failed (${status})${errorBody?.errorMessage ? ': ' + errorBody.errorMessage : ''}`)
+      return
+    }
+    setOrgApiKeys(prev => ({ ...prev, [id]: key }))
+    setManualOrgNames(prev => ({ ...prev, [id]: data.organisationName }))
+    setSelectedOrg(id)
+    setSelectedUser('')
+    setSelectedPatient('')
+    setManualOrgId('')
+    setManualOrgKey('')
+  }
+
   const openContractWidget = async () => {
     setError(null)
     if (!selectedOrg) {
@@ -424,7 +480,10 @@ export default function App() {
   // Render
   // ===================================================================
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 1600, margin: '0 auto', padding: 24 }}>
+    <SendNullLiteralContext.Provider value={sendNullLiteral}>
+    <div
+      className={sendNullLiteral ? 'orb-send-null' : undefined}
+      style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 1600, margin: '0 auto', padding: 24 }}>
       <style>{`
         @keyframes orb-flash {
           0%   { background-color: #fff4cc; box-shadow: 0 0 0 2px #f5c518 inset; }
@@ -465,6 +524,15 @@ export default function App() {
         .orb-copy-wrap:hover .orb-copy-btn,
         .orb-copy-wrap:focus-within .orb-copy-btn,
         .orb-copy-btn.is-copied { opacity: 1; }
+
+        .orb-send-null .orb-null-scope input[value="null" i]:not([type="checkbox"]):not([type="radio"]) {
+          color: #6e6487; background: #faf9fc; border-color: #d8d3e3;
+          font-family: ui-monospace, Consolas, monospace; font-style: italic;
+        }
+        .orb-null-sample {
+          color: #6e6487; background: #f5f3f8; border: 1px solid #e2deea; border-radius: 3px;
+          padding: 0 4px; font-family: ui-monospace, Consolas, monospace; font-style: italic;
+        }
       `}</style>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>ORB API Test Harness</h1>
       <p style={{ color: '#666', marginTop: 0, marginBottom: 16 }}>
@@ -488,27 +556,108 @@ export default function App() {
             value={serverUrl}
             onChange={setServerUrl}
             historyKey="serverUrlHistory"
-            placeholder="https://apitest-api.orbforhealth.com"
+            placeholder="https://api-test-app.orbforhealth.com"
           />
           <Label>API Key</Label>
           <InputWithHistory value={apiKey} onChange={setApiKey} historyKey="apiKeyHistory" placeholder="X-API-KEY" />
+          <Label>Add organisation</Label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={manualOrgId}
+              onChange={e => setManualOrgId(e.target.value)}
+              placeholder="extOrganisationId"
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <input
+              value={manualOrgKey}
+              onChange={e => setManualOrgKey(e.target.value)}
+              placeholder="X-ORG-API-KEY"
+              style={{ ...inputStyle, flex: 2 }}
+            />
+            <button
+              onClick={addOrgWithApiKey}
+              style={btnStyle}
+              title="Checks the key with GET /organisations/{id}, then adds the organisation to the lists"
+              disabled={!manualOrgId.trim() || !manualOrgKey.trim()}
+            >
+              Add
+            </button>
+            <HelpTip label="When do I need this?">
+              Use this to test with an <b>Organisation API key only</b> (API Key left empty).
+              Organisations are normally listed with <code>GET /organisations</code>, which needs the GovBody key.
+              <span style={{ display: 'block', marginTop: 6 }}>
+                The key is checked with <code>GET /organisations/{'{id}'}</code>, then the organisation appears in the
+                Context and Stats organisation lists. Clear its <b>Org API Key</b> in Context to remove it.
+              </span>
+            </HelpTip>
+          </div>
+          <Label>Null values</Label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#444', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendNullLiteral} onChange={e => setSendNullLiteral(e.target.checked)} />
+              Send <span className="orb-null-sample">null</span> as a real null
+            </label>
+            <HelpTip label="What does sending a real null do?">
+              <b>On:</b> type <code>null</code> in a field on a Create, Update or Connect form and it is sent as JSON <code>null</code>.
+              The field turns purple so you can see which values will go as null.
+              <span style={{ display: 'block', marginTop: 6 }}>
+                <b>Off:</b> <code>null</code> is sent as the text "null".
+              </span>
+              <span style={{ display: 'block', marginTop: 6 }}>
+                Blank fields are always left out of the request, so they never change anything.
+              </span>
+              <span style={{ display: 'block', marginTop: 6, color: '#c4c8cf' }}>
+                Example: on Update Organisation, Address 1 = <code>null</code> and
+                Postcode = <code>XY1 2ZZ</code> sends{' '}
+                <code>{'{"address1": null, "postcode": "XY1 2ZZ"}'}</code>,
+                which clears address 1, sets the postcode and leaves the rest unchanged.
+              </span>
+            </HelpTip>
+          </div>
         </Grid2>
       </Section>
 
-      {(orgs.length > 0 || selectedOrg) && (
+      {(knownOrgs.length > 0 || selectedOrg) && (
         <Section title="Context">
           <Grid2>
             <Label>Organisation</Label>
             <div style={{ display: 'flex', gap: 6 }}>
               <select value={selectedOrg} onChange={e => { setSelectedOrg(e.target.value); setSelectedUser(''); setSelectedPatient('') }} style={{ ...inputStyle, flex: 1 }}>
                 <option value="">-- select --</option>
-                {orgs.map(o => (
+                {knownOrgs.map(o => (
                   <option key={o.extOrganisationId} value={o.extOrganisationId}>
                     {o.organisationName} ({o.extOrganisationId}){o.suspended ? ' [SUSPENDED]' : ''}
                   </option>
                 ))}
               </select>
               <button onClick={() => loadOrgs()} style={btnStyle} title="Refresh organisations" disabled={!apiKey}>↻</button>
+            </div>
+
+            <Label>Org API Key</Label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={selectedOrg ? orgApiKeys[selectedOrg] ?? '' : ''}
+                onChange={e => {
+                  const value = e.target.value.trim()
+                  setOrgApiKeys(prev => {
+                    const next = { ...prev }
+                    if (value) next[selectedOrg] = value
+                    else delete next[selectedOrg]
+                    return next
+                  })
+                }}
+                placeholder="X-ORG-API-KEY (stored per organisation)"
+                style={{ ...inputStyle, flex: 1 }}
+                disabled={!selectedOrg}
+              />
+              <button
+                onClick={generateOrgApiKey}
+                style={btnStyle}
+                title="POST /organisations/{id}/api-key with the GovBody key (only if the organisation has no key yet)"
+                disabled={!selectedOrg || !apiKey}
+              >
+                Generate
+              </button>
             </div>
 
             <Label>User (Clinician)</Label>
@@ -568,7 +717,7 @@ export default function App() {
       {tab === 'orgs' && (
         <OrgsTab
           orb={orb}
-          orgs={orgs}
+          orgs={knownOrgs}
           onRefreshOrgs={() => loadOrgs()}
           onChanged={() => loadOrgs(true)}
         />
@@ -599,7 +748,7 @@ export default function App() {
       {tab === 'stats' && (
         <StatsTab
           orb={orb}
-          orgs={orgs}
+          orgs={knownOrgs}
           onRefreshOrgs={() => loadOrgs()}
         />
       )}
@@ -763,5 +912,6 @@ export default function App() {
         </aside>
       </div>
     </div>
+    </SendNullLiteralContext.Provider>
   )
 }
