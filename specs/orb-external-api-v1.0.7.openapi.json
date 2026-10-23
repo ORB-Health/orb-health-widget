@@ -534,7 +534,7 @@
             "name": "extOrganisationId",
             "in": "path",
             "required": true,
-            "description": "External organisation ID (EHR). Must be the same ID used at Create Organisation under this API key; scopes the contract-signing iframe to that organisation",
+            "description": "External organisation ID (EHR). When X-ORG-API-KEY is used, must be the Organisation that key belongs to; scopes the contract-signing iframe to that organisation",
             "schema": {
               "type": "string"
             },
@@ -1204,7 +1204,7 @@
             }
           },
           "409": {
-            "description": "Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`). Same 409 on Connect by Email and Connect by Link. Distinct from 422.",
+            "description": "Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`), or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`). Same 409 on Connect by Email and Connect by Link. Distinct from 422.",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -1321,7 +1321,7 @@
             }
           },
           "409": {
-            "description": "Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`). Same 409 on Connect by Email and Connect by Link. Distinct from 422.",
+            "description": "Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`), or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`). Same 409 on Connect by Email and Connect by Link. Distinct from 422.",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -2351,6 +2351,7 @@
           "EmailNotAvailable",
           "PatientInvalidStatus",
           "PatientDetailsMismatch",
+          "PatientAccountNotActivated",
           "ResendLimitExceeded",
           "NonClinicianAccess",
           "OrgIsSuspended",

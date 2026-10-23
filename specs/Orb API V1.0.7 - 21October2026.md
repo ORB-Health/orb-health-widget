@@ -264,6 +264,7 @@ Possible `errorCode` values:
   - **Connect by Email** or **Connect by Link** — email already exists but request DOB and/or surname do not match (same **409** / compact `{ errorCode, errorMessage }` on both); or
   - **Update Patient** — patient has NHS Login and `firstName` / `lastName` / `dateOfBirth` on the request do not match NHS-controlled values (omitted fields count as mismatch — include matching values when updating other demographics).
   Distinct from **422** `connectionStatus` **DataMismatch** (NHS→ORB after NHS login; body uses `dobMismatch` / `surnameMismatch`, not `errorCode`).
+- **PatientAccountNotActivated** - **Connect by Email** or **Connect by Link** for an existing ORB patient (matched by email) who has not activated their ORB account and has no NHS Login (HTTP **409**). The NHS Login invitation cannot be sent until the patient activates their ORB account. The patient is not linked to the organisation.
 - **NonClinicianAccess** - A patient access token was requested for a user with `isClinician: false` (only clinical users may request access tokens).
 - **OrgIsSuspended** - The organisation is suspended; protected operations such as contract-access-token and patient access-token are blocked (**403**).
 - **NhsModuleDisabled** - The organisation NHS module is not enabled; patient access-token issue is blocked (**403**). (Widget-side NHS-module unavailable UI may still apply separately.)
@@ -1556,6 +1557,7 @@ Sends an email inviting a patient to sign up and grant permission for the organi
 - If the patient does not exist, ORB creates a new patient record and sends a NHS invitation email.
 - If the patient exists but is not connected, ORB sends the invitation email directly (unless resend=false and an invitation is already pending).
   In this case, ORB validates that date of birth and surname in the request match the existing ORB patient record (matched by email). A mismatch returns **409** (`PatientDetailsMismatch`). Other request fields are not applied on Connect — use [Update Patient](#update-patient) to change demographics.
+  If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** (`PatientAccountNotActivated`) and the patient is not linked to the organisation.
 - If the patient is already connected, ORB may send a data-access request email only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. After **Reviewed**, no further data-access request email is sent. Invitation and data-access emails include an ORB-hosted decline link; if the patient uses it, Get Patient Connection Status returns **Declined** (see Patients statuses above).
 
 The EHR may call this endpoint again to send a **reminder** (e.g. if the patient has not yet completed NHS login, declined the invitation, or while `dataAccessStatus` is still **RequestNotSent** / **RequestSent** / **Declined**). Whether an email is sent is subject to the rate limits in the Patients section above: an NHS invitation can be resent when `resend` is true (while **InviteSent** or **DataMismatch**), or without `resend` when `connectionStatus` is **Declined**; a data-access request email can be sent again only while status is **RequestNotSent**, **RequestSent**, or **Declined** and the data-access rate limit allows — `resend` is not required for data-access reminders.
@@ -1615,7 +1617,7 @@ The NHS registration link in the email expires after the configured invitation p
 | 400    | Connection failed due to invalid request or validation error |
 | 403    | Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`) |
 | 404    | Organisation or requesting clinician not found                                                        |
-| 409 | Conflict — external patient ID already in use, or DOB/surname does not match existing ORB patient (`PatientDetailsMismatch`). Same as Connect by Link. Distinct from 422. |
+| 409 | Conflict — external patient ID already in use, or DOB/surname does not match existing ORB patient (`PatientDetailsMismatch`), or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`). Same as Connect by Link. Distinct from 422. |
 | 422    | Returned when the patient's connection status is **DataMismatch** (NHS login revealed a mismatch between ORB and NHS data) and no new invitation was issued (`resend` not `true`). Response body includes `connectionStatus` **DataMismatch** with `dobMismatch`/`surnameMismatch`. Distinct from 409 (request body does not match ORB, or external patient ID already in use). |
 | 429 | Rate limit exceeded — the maximum number of connection emails allowed per patient per organisation in 24 hours has been reached (`ResendLimitExceeded`) |
 
@@ -1700,6 +1702,7 @@ Returns an invitation link, which can be sent to a patient as part of a link req
 - If the patient does not exist, ORB creates a new patient record, a NHS invitation link is built and returned (**201**, `connectionStatus` **InviteSent**).
 - If the patient exists but is not connected, a NHS invitation link is built and returned (**201**, `connectionStatus` **InviteSent**) when an invitation is issued.
   In this case, ORB validates that date of birth and surname in the request match the existing ORB patient record (matched by email). A mismatch returns **409** (`PatientDetailsMismatch`) — same as Connect by Email. Other request fields are not applied on Connect — use [Update Patient](#update-patient) to change demographics.
+  If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** (`PatientAccountNotActivated`) and the patient is not linked to the organisation. Same as Connect by Email.
 - If the patient is already connected, it is indicated with response code **201** and no link for NHS invitation is returned.
 
 In all previous cases, a data-access request link is built and returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (and `connectionStatus` is not **DataMismatch** or **Declined**), subject to the data-access rate limit. After **Reviewed**, no data-access request link is returned. When an invitation or data-access link is issued, the response also includes the matching decline URL (`declineInvitationLink` / `declineDataAccessRequestLink`) for the EHR to pass to the patient if needed.
@@ -1796,7 +1799,7 @@ An NHS registration link expires after the configured invitation period (**7 day
 | 400    | Connection failed due to invalid request or validation error |
 | 403    | Organisation contract not signed (`OrganisationContractNotSigned`), or EHR API disabled (`ApiDisabled`) |
 | 404    | Organisation or requesting clinician not found                                                                     |
-| 409 | Conflict — external patient ID already in use, or DOB/surname does not match existing ORB patient (`PatientDetailsMismatch`). Same as Connect by Email. Distinct from 422. |
+| 409 | Conflict — external patient ID already in use, or DOB/surname does not match existing ORB patient (`PatientDetailsMismatch`), or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`). Same as Connect by Email. Distinct from 422. |
 | 422    | Returned when the patient's connection status is **DataMismatch** (NHS login revealed a mismatch between ORB and NHS data) and no new invitation was issued (`resend` not `true`). Response body includes `connectionStatus` **DataMismatch** with `dobMismatch`/`surnameMismatch`. Distinct from 409 (request body does not match ORB, or external patient ID already in use). |
 | 429  | Rate limit exceeded — the maximum number of connection links allowed per patient per organisation in 24 hours has been reached (`ResendLimitExceeded`) |
 

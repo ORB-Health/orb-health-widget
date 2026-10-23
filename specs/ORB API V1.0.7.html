@@ -407,8 +407,8 @@ paths:
       - name: extOrganisationId
         in: path
         required: true
-        description: External organisation ID (EHR). Must be the same ID used at Create Organisation under
-          this API key; scopes the contract-signing iframe to that organisation
+        description: External organisation ID (EHR). When X-ORG-API-KEY is used, must be the Organisation
+          that key belongs to; scopes the contract-signing iframe to that organisation
         schema:
           type: string
         example: extOrganisationKey
