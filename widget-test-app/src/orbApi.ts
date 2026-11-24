@@ -314,7 +314,11 @@ export interface ConnectPatientRequest {
   sex?: 'Male' | 'Female' | 'NotApplicable'
   emailAddress?: string
   postcode?: string
-  requestingClinicianId: string
+  /**
+   * Optional since 327527. An omitted, unknown or archived id still connects the
+   * patient; the patient emails then name the organisation instead of a clinician.
+   */
+  requestingClinicianId?: string
   /** If true, resend the invite even if one was already sent. */
   resend?: boolean
 }

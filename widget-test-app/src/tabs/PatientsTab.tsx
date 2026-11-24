@@ -21,6 +21,10 @@ export function PatientsTab(props: {
   const [sub, setSub] = usePersistedState<'connect' | 'update' | 'status' | 'list'>('patientSubTab', 'connect')
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<number | null>(null)
+  // Kept here so a typed clinician id survives switching sub-tabs.
+  const [clinicianId, setClinicianId] = useState(props.selectedUser)
+
+  useEffect(() => { setClinicianId(props.selectedUser) }, [props.selectedUser])
 
   const showFlash = (msg: string) => {
     setFlash(msg)
@@ -62,7 +66,8 @@ export function PatientsTab(props: {
         <PatientConnectForm
           orb={props.orb}
           org={props.selectedOrg}
-          selectedUser={props.selectedUser}
+          clinicianId={clinicianId}
+          onClinicianIdChange={setClinicianId}
           selectedPatient={props.selectedPatient}
           showFlash={showFlash}
           onChanged={props.onChanged}
@@ -75,7 +80,6 @@ export function PatientsTab(props: {
           selectedUser={props.selectedUser}
           patients={props.patients}
           selectedPatient={props.selectedPatient}
-          showFlash={showFlash}
           onRefresh={props.onRefreshPatients}
           onChanged={props.onChanged}
         />
@@ -103,7 +107,8 @@ export function PatientsTab(props: {
 function PatientConnectForm(props: {
   orb: OrbApi
   org: string
-  selectedUser: string
+  clinicianId: string
+  onClinicianIdChange: (value: string) => void
   selectedPatient: string
   showFlash: (msg: string) => void
   onChanged: () => void
@@ -136,12 +141,11 @@ function PatientConnectForm(props: {
     title, firstName, lastName,
     dateOfBirth: normalizeDob(dob), sex,
     emailAddress: email, postcode,
-    requestingClinicianId: props.selectedUser,
+    requestingClinicianId: props.clinicianId,
     ...(resend ? { resend: true } : {}),
   }, sendNullLiteral)
 
   const connectEmail = async () => {
-    if (!props.selectedUser) return props.showFlash('Select a user (clinician) in Context first')
     if (!patId) return props.showFlash('Enter a patient ID in the form (or click Randomize)')
     await props.orb.sendConnectionEmail(props.org, patId,
       body() as Parameters<OrbApi['sendConnectionEmail']>[2])
@@ -149,7 +153,6 @@ function PatientConnectForm(props: {
   }
 
   const connectLink = async () => {
-    if (!props.selectedUser) return props.showFlash('Select a user (clinician) in Context first')
     if (!patId) return props.showFlash('Enter a patient ID in the form (or click Randomize)')
     await props.orb.createConnectionLink(props.org, patId,
       body() as Parameters<OrbApi['createConnectionLink']>[2])
@@ -158,6 +161,11 @@ function PatientConnectForm(props: {
 
   return (
     <Section title="Connect Patient (Email or Link)" className="orb-null-scope">
+      <Hint>
+        <b>Requesting clinicianId</b> is optional. Leave it empty to send no clinician, or type an
+        id that is unknown or archived to test the fallback to the organisation name in the patient
+        emails. Selecting a user in Context fills it in.
+      </Hint>
       <Grid2>
         <Label>extOrganisationId</Label>
         <input value={props.org} disabled style={{ ...inputStyle, background: '#f5f5f5' }} />
@@ -165,7 +173,7 @@ function PatientConnectForm(props: {
         <input value={patId} onChange={e => setPatId(e.target.value)} style={inputStyle}
           placeholder={props.selectedPatient ? `(selected: ${props.selectedPatient})` : 'e.g. PAT-001'} />
         <Label>Requesting clinicianId</Label>
-        <input value={props.selectedUser} disabled style={{ ...inputStyle, background: '#f5f5f5' }} placeholder="select a User in Context" />
+        <input value={props.clinicianId} onChange={e => props.onClinicianIdChange(e.target.value)} style={inputStyle} />
         <Label>Title</Label>
         <select value={title} onChange={e => setTitle(e.target.value)} style={inputStyle}>
           <option value="">-- (omit) --</option>
@@ -215,7 +223,6 @@ function PatientUpdateForm(props: {
   selectedUser: string
   patients: PatientItem[]
   selectedPatient: string
-  showFlash: (msg: string) => void
   onRefresh: () => void
   onChanged: () => void
 }) {
@@ -273,7 +280,6 @@ function PatientUpdateForm(props: {
 
   const connectLink = async () => {
     if (!target) return
-    if (!props.selectedUser) return props.showFlash('Select a user (clinician) in Context first')
     await props.orb.createConnectionLink(props.org, target, stripEmpty({
       title, firstName, lastName,
       dateOfBirth: normalizeDob(dob), sex,
@@ -293,7 +299,8 @@ function PatientUpdateForm(props: {
         not overwritten - a mismatch returns 409.
         <br />
         <b>POST connection-link</b> re-sends the connect call with the pre-filled values and
-        returns the invitation / data-access links for this existing patient.
+        returns the invitation / data-access links for this existing patient. It sends the Context
+        user as <b>requestingClinicianId</b>, or omits the field when no user is selected.
       </Hint>
       <Grid2>
         <Label>Target patient</Label>
