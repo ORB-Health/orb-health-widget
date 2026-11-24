@@ -62,6 +62,8 @@ paths:
       tags:
       - Organisations
       operationId: listOrganisations
+      security:
+        - ApiKeyAuth: []
       summary: List Organisations
       description: |
         Returns a list of organisations under the Governing Body linked to the API key.
@@ -92,13 +94,13 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - ApiKeyAuth: []
   /organisations/{extOrganisationId}:
     post:
       tags:
       - Organisations
       operationId: createOrganisation
+      security:
+        - ApiKeyAuth: []
       summary: Create Organisation
       description: |
         Creates an Organisation in ORB under the GovBody associated with the API Key.
@@ -155,8 +157,6 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - ApiKeyAuth: []
     patch:
       tags:
       - Organisations
@@ -245,9 +245,11 @@ paths:
       tags:
       - Organisations
       operationId: deleteOrganisation
+      security:
+        - ApiKeyAuth: []
       summary: Delete Organisation
       description: |
-        Delete the organisation and all associated users. Deletion does not require the organisation contract to be signed, so an organisation created by mistake can be removed before signing.
+        Delete the organisation and all associated users. Authenticated with the GovBody X-API-KEY only. Deletion does not require the organisation contract to be signed, so an organisation created by mistake can be removed before signing.
         Use this if an organisation asks to turn OFF the integration permanently or if it leaves the EHR system.
 
         Once deleted, the organisation is archived (not hard-removed):
@@ -281,8 +283,6 @@ paths:
             application/json; charset=utf-8:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - ApiKeyAuth: []
   /organisations/{extOrganisationId}/api-key:
     post:
       tags:
@@ -813,6 +813,7 @@ paths:
 
         - If the patient does not exist, ORB creates a new patient record and sends an NHS invitation email.
         - If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch`. Other request fields are not applied on Connect (use Update Patient). ORB then sends the invitation email directly.
+        - If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** `PatientAccountNotActivated` and the patient is not linked to the organisation.
         - If the patient is already connected, ORB may send a data-access request email only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit.
 
         The EHR may call this endpoint again to send a **reminder**. ORB may rate-limit NHS invitation and data-access request emails per patient per organisation over a rolling 24 hours. An NHS invitation can be resent when `resend` is true while InviteSent or DataMismatch and the invitation limit allows (the status stays DataMismatch until NHS login succeeds), or without `resend` when connectionStatus is Declined. A data-access request reminder does not require `resend` and is issued while status is RequestNotSent, RequestSent, or Declined — only the data-access rate limit applies. Exceeding a limit returns **429** ResendLimitExceeded.
@@ -821,6 +822,13 @@ paths:
         Generating a replacement invalidates the previous registration link and restarts the expiry period.
         Data-access / consent emails open the ORB login page and do not expire after a fixed number of days
         (they are not timed invitation tokens); the patient must sign in before reviewing access.
+
+        **Requesting clinician:** `requestingClinicianId` is optional. When it matches an active user for this
+        organisation, ORB uses that clinician's name in the invitation and data-access emails sent by Connect
+        by Email. When the field is omitted, blank, or whitespace-only, or the id is not registered or is
+        archived, the connection still succeeds and those emails use the organisation name. A missing clinician
+        is not a 404. The automatic data-access request email sent after NHS Login always uses the organisation
+        name (the clinician id is not retained for that email).
       parameters:
       - $ref: '#/components/parameters/extOrganisationId'
       - $ref: '#/components/parameters/extPatientId'
@@ -862,13 +870,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Organisation or requesting clinician not found
+          description: Organisation not found
           content:
             application/json; charset=utf-8:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`).
+          description: Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`),
+            or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`).
             Same 409 on Connect by Email and Connect by Link. Distinct from 422.
           content:
             application/json; charset=utf-8:
@@ -902,6 +911,7 @@ paths:
 
         - If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link (**201**, `connectionStatus` **InviteSent**).
         - If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as Connect by Email). Other request fields are not applied on Connect (use Update Patient). When an invitation is issued, an NHS invitation link is returned (**201**, `connectionStatus` **InviteSent**).
+        - If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** `PatientAccountNotActivated` and the patient is not linked to the organisation (same as Connect by Email).
         - If the patient is already connected, response code **201** is returned with no invitation link.
 
         In all previous cases, a data-access request link is returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. When an invitation or data-access link is issued, `declineInvitationLink` and/or `declineDataAccessRequestLink` are returned as well.
@@ -914,6 +924,10 @@ paths:
         Generating a replacement invalidates the previous registration link and restarts the expiry period.
         A returned data-access / consent link opens the ORB login page and does not expire after a fixed number of days
         (it is not a timed invitation token); the patient must sign in before reviewing access.
+
+        **Requesting clinician:** `requestingClinicianId` is optional and follows the same rules as Connect by
+        Email (including blank or whitespace-only values). This endpoint does not send an email, so an omitted,
+        blank, unknown, or archived id does not change the links returned and does not fail the request.
       parameters:
       - $ref: '#/components/parameters/extOrganisationId'
       - $ref: '#/components/parameters/extPatientId'
@@ -957,13 +971,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Organisation or requesting clinician not found
+          description: Organisation not found
           content:
             application/json; charset=utf-8:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`).
+          description: Conflict — external patient ID in use, or DOB/surname mismatch (`PatientDetailsMismatch`),
+            or the existing ORB patient has not activated their ORB account (`PatientAccountNotActivated`).
             Same 409 on Connect by Email and Connect by Link. Distinct from 422.
           content:
             application/json; charset=utf-8:
@@ -1744,6 +1759,7 @@ components:
       - EmailNotAvailable
       - PatientInvalidStatus
       - PatientDetailsMismatch
+      - PatientAccountNotActivated
       - ResendLimitExceeded
       - NonClinicianAccess
       - OrgIsSuspended
@@ -1936,6 +1952,23 @@ components:
       - extOrganisationId
       - organisationName
       - suspended
+    OrganisationApiKeyResponse:
+      type: object
+      properties:
+        extOrganisationId:
+          type: string
+          description: External organisation ID (EHR)
+        apiKey:
+          type: string
+          description: The Organisation API key, sent as X-ORG-API-KEY. Returned only in this response
+        apiKeyExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the key expires; null if it does not expire
+      required:
+      - extOrganisationId
+      - apiKey
     ContractStatusResponse:
       type: object
       properties:
@@ -2272,7 +2305,6 @@ components:
       - dateOfBirth
       - sex
       - emailAddress
-      - requestingClinicianId
       properties:
         title:
           allOf:
@@ -2302,7 +2334,8 @@ components:
           description: Patient postcode. May be omitted, null or empty. If provided, maximum length 15.
         requestingClinicianId:
           type: string
-          description: External user ID of the requesting clinician
+          nullable: true
+          description: Optional external user ID of the requesting clinician (extUserId). When it matches an active user for this organisation, that person's name is used in the invitation and data-access emails sent by Connect by Email. When omitted, blank, whitespace-only, unknown, or archived, the connection still succeeds and those emails use the organisation name. The automatic post-NHS Login data-access email always uses the organisation name.
         resend:
           type: boolean
           description: True to force resend of an NHS invitation email while connectionStatus is InviteSent
@@ -2316,7 +2349,6 @@ components:
       - dateOfBirth
       - sex
       - emailAddress
-      - requestingClinicianId
       properties:
         title:
           allOf:
@@ -2346,7 +2378,8 @@ components:
           description: Patient postcode. May be omitted, null or empty. If provided, maximum length 15.
         requestingClinicianId:
           type: string
-          description: External user ID of the requesting clinician
+          nullable: true
+          description: Optional external user ID of the requesting clinician (extUserId). Accepted on the same terms as Connect by Email (including blank or whitespace-only). This endpoint does not send an email, so an omitted, blank, unknown, or archived id does not change the links returned and does not fail the request.
         resend:
           type: boolean
           description: True to force a new NHS invitation link while connectionStatus is InviteSent or
@@ -2635,23 +2668,6 @@ components:
       - Dr
       - Other
       description: 'Patient title. Allowed values: Mr, Mrs, Miss, Ms, Dr, Other.'
-    OrganisationApiKeyResponse:
-      type: object
-      required:
-      - extOrganisationId
-      - apiKey
-      properties:
-        extOrganisationId:
-          type: string
-          description: External organisation ID (EHR)
-        apiKey:
-          type: string
-          description: The Organisation API key, sent as X-ORG-API-KEY. Returned only in this response
-        apiKeyExpiresAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: When the key expires; null if it does not expire
 </script>
 
   <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>

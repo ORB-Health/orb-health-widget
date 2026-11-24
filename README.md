@@ -7,10 +7,11 @@ This folder contains the Orb External API documentation used for NHS GP EHR inte
 
 **ORB External API v1.0.8 (current release)**
 
-- **Integration guide (Markdown):** `./specs/Orb API V1.0.8 - 23October2026.md`
+- **Integration guide (Markdown):** `./specs/Orb API V1.0.8 - 23November2026.md`
 - **Integration guide (PDF):** `./specs/Orb API V1.0.8.pdf`
 - **OpenAPI — HTML:** `./specs/ORB API V1.0.8.html`
 - **OpenAPI — JSON:** `./specs/orb-external-api-v1.0.8.openapi.json`
 - **OpenAPI — API reference (PDF):** `./specs/orb-external-api-v1.0.8.openapi.pdf`
-- **Mini Release Notes:** `./specs/ORB External API v1.0.2 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.3 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.4 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.7 — Mini Release Notes.pdf`
+- **Mini Release Notes:** `./specs/ORB External API v1.0.2 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.3 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.4 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.7 — Mini Release Notes.pdf`, `./specs/ORB External API v1.0.8 — Mini Release Notes.pdf`
 - **Widget embed guide:** `./widget-integration.md`
+- **API contract tests (Dredd):** `../../tests/api-contract/swagger.yaml` (kept in sync with the OpenAPI JSON above)

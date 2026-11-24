@@ -1130,7 +1130,7 @@
         ],
         "operationId": "connectPatientByEmail",
         "summary": "Connect Patient by Email",
-        "description": "Sends an email inviting a patient to sign up and grant permission for the organisation to view NHS records.\n\n- If the patient does not exist, ORB creates a new patient record and sends an NHS invitation email.\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch`. Other request fields are not applied on Connect (use Update Patient). ORB then sends the invitation email directly.\n- If the patient is already connected, ORB may send a data-access request email only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit.\n\nThe EHR may call this endpoint again to send a **reminder**. ORB may rate-limit NHS invitation and data-access request emails per patient per organisation over a rolling 24 hours. An NHS invitation can be resent when `resend` is true while InviteSent or DataMismatch and the invitation limit allows (the status stays DataMismatch until NHS login succeeds), or without `resend` when connectionStatus is Declined. A data-access request reminder does not require `resend` and is issued while status is RequestNotSent, RequestSent, or Declined — only the data-access rate limit applies. Exceeding a limit returns **429** ResendLimitExceeded.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nData-access / consent emails open the ORB login page and do not expire after a fixed number of days\n(they are not timed invitation tokens); the patient must sign in before reviewing access.\n",
+        "description": "Sends an email inviting a patient to sign up and grant permission for the organisation to view NHS records.\n\n- If the patient does not exist, ORB creates a new patient record and sends an NHS invitation email.\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch`. Other request fields are not applied on Connect (use Update Patient). ORB then sends the invitation email directly.\n- If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** `PatientAccountNotActivated` and the patient is not linked to the organisation.\n- If the patient is already connected, ORB may send a data-access request email only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit.\n\nThe EHR may call this endpoint again to send a **reminder**. ORB may rate-limit NHS invitation and data-access request emails per patient per organisation over a rolling 24 hours. An NHS invitation can be resent when `resend` is true while InviteSent or DataMismatch and the invitation limit allows (the status stays DataMismatch until NHS login succeeds), or without `resend` when connectionStatus is Declined. A data-access request reminder does not require `resend` and is issued while status is RequestNotSent, RequestSent, or Declined — only the data-access rate limit applies. Exceeding a limit returns **429** ResendLimitExceeded.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nData-access / consent emails open the ORB login page and do not expire after a fixed number of days\n(they are not timed invitation tokens); the patient must sign in before reviewing access.\n\n\n**Requesting clinician:** `requestingClinicianId` is optional. When it matches an active user for this organisation, ORB uses that clinician's name in the invitation and data-access emails sent by Connect by Email. When the field is omitted, blank, or whitespace-only, or the id is not registered or is archived, the connection still succeeds and those emails use the organisation name. A missing clinician is not a 404. The automatic data-access request email sent after NHS Login always uses the organisation name (the clinician id is not retained for that email).\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -1194,7 +1194,7 @@
             }
           },
           "404": {
-            "description": "Organisation or requesting clinician not found",
+            "description": "Organisation not found",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -1247,7 +1247,7 @@
         ],
         "operationId": "connectPatientByLink",
         "summary": "Connect Patient by Link",
-        "description": "Returns an invitation link which can be sent to a patient as part of a link request.\n\n- If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link (**201**, `connectionStatus` **InviteSent**).\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as Connect by Email). Other request fields are not applied on Connect (use Update Patient). When an invitation is issued, an NHS invitation link is returned (**201**, `connectionStatus` **InviteSent**).\n- If the patient is already connected, response code **201** is returned with no invitation link.\n\nIn all previous cases, a data-access request link is returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. When an invitation or data-access link is issued, `declineInvitationLink` and/or `declineDataAccessRequestLink` are returned as well.\n\nCalling this endpoint again allows the EHR to obtain a fresh link as a **reminder**. An NHS invitation link is returned again only when `resend` is true while InviteSent or DataMismatch (and the invitation rate limit allows; from DataMismatch the status is kept until NHS login succeeds), or without `resend` when connectionStatus is Declined. A data-access request link can be returned again only while status is RequestNotSent, RequestSent, or Declined and the data-access rate limit allows — `resend` is not required for data-access reminders. Exceeding a limit returns **429** ResendLimitExceeded.\n\nPartners should treat **201** as the invitation success path. HTTP **200** is mapped only if `connectionStatus` were still InviteNotSent or InviteExpired; after a normal successful Link call that issues an invitation, status is already InviteSent and the response is **201**.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nA returned data-access / consent link opens the ORB login page and does not expire after a fixed number of days\n(it is not a timed invitation token); the patient must sign in before reviewing access.\n",
+        "description": "Returns an invitation link which can be sent to a patient as part of a link request.\n\n- If the patient does not exist, ORB creates a new patient record and returns an NHS invitation link (**201**, `connectionStatus` **InviteSent**).\n- If the patient exists but is not connected, ORB validates that date of birth and surname match the existing ORB record (email match); a mismatch returns **409** `PatientDetailsMismatch` (same as Connect by Email). Other request fields are not applied on Connect (use Update Patient). When an invitation is issued, an NHS invitation link is returned (**201**, `connectionStatus` **InviteSent**).\n- If the existing patient has not activated their ORB account and has no NHS Login, the request returns **409** `PatientAccountNotActivated` and the patient is not linked to the organisation (same as Connect by Email).\n- If the patient is already connected, response code **201** is returned with no invitation link.\n\nIn all previous cases, a data-access request link is returned only while `dataAccessStatus` is **RequestNotSent**, **RequestSent**, or **Declined** (not after **Reviewed**, and not when `connectionStatus` is **DataMismatch** or **Declined**), subject to the data-access rate limit. When an invitation or data-access link is issued, `declineInvitationLink` and/or `declineDataAccessRequestLink` are returned as well.\n\nCalling this endpoint again allows the EHR to obtain a fresh link as a **reminder**. An NHS invitation link is returned again only when `resend` is true while InviteSent or DataMismatch (and the invitation rate limit allows; from DataMismatch the status is kept until NHS login succeeds), or without `resend` when connectionStatus is Declined. A data-access request link can be returned again only while status is RequestNotSent, RequestSent, or Declined and the data-access rate limit allows — `resend` is not required for data-access reminders. Exceeding a limit returns **429** ResendLimitExceeded.\n\nPartners should treat **201** as the invitation success path. HTTP **200** is mapped only if `connectionStatus` were still InviteNotSent or InviteExpired; after a normal successful Link call that issues an invitation, status is already InviteSent and the response is **201**.\n\n**Link validity:** NHS registration links expire after a system-configurable period (7 days by default).\nGenerating a replacement invalidates the previous registration link and restarts the expiry period.\nA returned data-access / consent link opens the ORB login page and does not expire after a fixed number of days\n(it is not a timed invitation token); the patient must sign in before reviewing access.\n\n\n**Requesting clinician:** `requestingClinicianId` is optional and follows the same rules as Connect by Email (including blank or whitespace-only values). This endpoint does not send an email, so an omitted, blank, unknown, or archived id does not change the links returned and does not fail the request.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/extOrganisationId"
@@ -1311,7 +1311,7 @@
             }
           },
           "404": {
-            "description": "Organisation or requesting clinician not found",
+            "description": "Organisation not found",
             "content": {
               "application/json; charset=utf-8": {
                 "schema": {
@@ -3026,8 +3026,7 @@
           "lastName",
           "dateOfBirth",
           "sex",
-          "emailAddress",
-          "requestingClinicianId"
+          "emailAddress"
         ],
         "properties": {
           "title": {
@@ -3071,7 +3070,8 @@
           },
           "requestingClinicianId": {
             "type": "string",
-            "description": "External user ID of the requesting clinician"
+            "nullable": true,
+            "description": "Optional external user ID of the requesting clinician (extUserId). When it matches an active user for this organisation, that person's name is used in the invitation and data-access emails sent by Connect by Email. When omitted, blank, whitespace-only, unknown, or archived, the connection still succeeds and those emails use the organisation name. The automatic post-NHS Login data-access email always uses the organisation name."
           },
           "resend": {
             "type": "boolean",
@@ -3087,8 +3087,7 @@
           "lastName",
           "dateOfBirth",
           "sex",
-          "emailAddress",
-          "requestingClinicianId"
+          "emailAddress"
         ],
         "properties": {
           "title": {
@@ -3132,7 +3131,8 @@
           },
           "requestingClinicianId": {
             "type": "string",
-            "description": "External user ID of the requesting clinician"
+            "nullable": true,
+            "description": "Optional external user ID of the requesting clinician (extUserId). Accepted on the same terms as Connect by Email (including blank or whitespace-only). This endpoint does not send an email, so an omitted, blank, unknown, or archived id does not change the links returned and does not fail the request."
           },
           "resend": {
             "type": "boolean",
@@ -3490,27 +3490,6 @@
           }
         }
       },
-      "PatientSex": {
-        "type": "string",
-        "enum": [
-          "Male",
-          "Female",
-          "NotApplicable"
-        ],
-        "description": "Patient sex. Allowed values: Male, Female, NotApplicable."
-      },
-      "PatientTitle": {
-        "type": "string",
-        "enum": [
-          "Mr",
-          "Mrs",
-          "Miss",
-          "Ms",
-          "Dr",
-          "Other"
-        ],
-        "description": "Patient title. Allowed values: Mr, Mrs, Miss, Ms, Dr, Other."
-      },
       "OrganisationApiKeyResponse": {
         "type": "object",
         "required": [
@@ -3533,6 +3512,27 @@
             "description": "When the key expires; null if it does not expire"
           }
         }
+      },
+      "PatientSex": {
+        "type": "string",
+        "enum": [
+          "Male",
+          "Female",
+          "NotApplicable"
+        ],
+        "description": "Patient sex. Allowed values: Male, Female, NotApplicable."
+      },
+      "PatientTitle": {
+        "type": "string",
+        "enum": [
+          "Mr",
+          "Mrs",
+          "Miss",
+          "Ms",
+          "Dr",
+          "Other"
+        ],
+        "description": "Patient title. Allowed values: Mr, Mrs, Miss, Ms, Dr, Other."
       }
     }
   }
